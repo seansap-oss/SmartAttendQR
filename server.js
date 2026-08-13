@@ -6,28 +6,23 @@ const url = require('url');
 
 const PORT = process.env.PORT || 3000;
 
-// Configurable Company WhatsApp Number (Can be set via env var or admin dashboard)
+// Configurable Company Settings
 let COMPANY_CONFIG = {
-  botPhone: process.env.WHATSAPP_BOT_PHONE || '', // Set your real WhatsApp number with country code, e.g., '61412345678'
+  botPhone: process.env.WHATSAPP_BOT_PHONE || '',
   companyName: 'SmartAttend Reception',
-  kioskSecret: process.env.KIOSK_SECRET || 'kiosk_super_secret_key_8899'
+  kioskSecret: process.env.KIOSK_SECRET || 'smartattend_kiosk_secret_2026'
 };
 
-// --- DATA STORE (In-Memory with persistent structure) ---
+// CLEAN DATABASE (No demo accounts)
 let DB = {
-  users: [
-    { id: 'usr-101', name: 'Alex Johnson', username: 'alex', phone: '+15550192834', department: 'Engineering', shiftStart: '09:00', status: 'OUT' },
-    { id: 'usr-102', name: 'Sarah Miller', username: 'sarah', phone: '+15550183742', department: 'Design', shiftStart: '09:00', status: 'IN' }
-  ],
-  logs: [
-    { id: 'log-001', userId: 'usr-102', userName: 'Sarah Miller', eventType: 'CHECK_IN', time: new Date(Date.now() - 4 * 3600 * 1000).toISOString(), method: 'WHATSAPP', isLate: false }
-  ],
+  users: [],
+  logs: [],
   usedTokens: new Set()
 };
 
-// --- TOTP / DYNAMIC 30s HMAC QR ENGINE ---
+// TOTP 30s HMAC Engine
 function generateTOTP(secret, timeWindowOffset = 0) {
-  const timeStep = 30; // 30 seconds
+  const timeStep = 30;
   const currentEpoch = Math.floor(Date.now() / 1000);
   const timeWindow = Math.floor(currentEpoch / timeStep) + timeWindowOffset;
   const hmac = crypto.createHmac('sha256', secret);
@@ -47,33 +42,84 @@ function verifyTOTP(secret, inputCode) {
   return { valid: false };
 }
 
-function calculateHoursForUser(userId) {
+function formatTimeWithSeconds(dateObj) {
+  return dateObj.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true
+  });
+}
+
+function formatDuration(totalSeconds) {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return `${hours}h ${minutes}m ${seconds}s`;
+}
+
+function calculateDetailedHours(userId) {
   const userLogs = DB.logs
     .filter(l => l.userId === userId)
     .sort((a, b) => new Date(a.time) - new Date(b.time));
 
-  let totalMinutes = 0;
+  const now = new Date();
+  const todayStr = now.toDateString();
+
+  let todaySeconds = 0;
+  let weeklySeconds = 0;
+  let monthlySeconds = 0;
+
+  let todayFirstIn = null;
+  let todayLastOut = null;
   let lastInTime = null;
 
+  const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 3600 * 1000);
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
+
   for (const log of userLogs) {
+    const logTime = new Date(log.time);
+    const isToday = logTime.toDateString() === todayStr;
+    const isThisWeek = logTime >= oneWeekAgo;
+    const isThisMonth = logTime.getMonth() === currentMonth && logTime.getFullYear() === currentYear;
+
     if (log.eventType === 'CHECK_IN') {
-      lastInTime = new Date(log.time);
+      lastInTime = logTime;
+      if (isToday && !todayFirstIn) {
+        todayFirstIn = logTime;
+      }
     } else if (log.eventType === 'CHECK_OUT' && lastInTime) {
-      const diffMs = new Date(log.time) - lastInTime;
-      totalMinutes += Math.floor(diffMs / (1000 * 60));
+      const diffSec = Math.floor((logTime - lastInTime) / 1000);
+      if (isToday) {
+        todaySeconds += diffSec;
+        todayLastOut = logTime;
+      }
+      if (isThisWeek) weeklySeconds += diffSec;
+      if (isThisMonth) monthlySeconds += diffSec;
       lastInTime = null;
     }
   }
 
+  // If currently checked in, add ongoing elapsed time
   if (lastInTime) {
-    totalMinutes += Math.floor((new Date() - lastInTime) / (1000 * 60));
+    const elapsedSec = Math.floor((now - lastInTime) / 1000);
+    todaySeconds += elapsedSec;
+    weeklySeconds += elapsedSec;
+    monthlySeconds += elapsedSec;
   }
 
-  const hours = (totalMinutes / 60).toFixed(1);
-  return { minutes: totalMinutes, hours: `${hours} hrs` };
+  return {
+    todaySeconds,
+    todayFormatted: formatDuration(todaySeconds),
+    todayFirstIn: todayFirstIn ? formatTimeWithSeconds(todayFirstIn) : '--',
+    todayLastOut: todayLastOut ? formatTimeWithSeconds(todayLastOut) : (lastInTime ? 'Active (Open)' : '--'),
+    weeklyFormatted: formatDuration(weeklySeconds),
+    monthlyFormatted: formatDuration(monthlySeconds),
+    rawHours: (todaySeconds / 3600).toFixed(1) + ' hrs'
+  };
 }
 
-// --- HTTP SERVER ---
 const server = http.createServer((req, res) => {
   const parsedUrl = url.parse(req.url, true);
   const pathname = parsedUrl.pathname;
@@ -88,56 +134,61 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // --- API ROUTING ---
-
-  // 1. Kiosk Token & Bot Phone Configuration
+  // 1. Kiosk Token
   if (pathname === '/api/kiosk/token' && req.method === 'GET') {
     const totp = generateTOTP(COMPANY_CONFIG.kioskSecret);
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       token: totp.code,
       secondsRemaining: totp.secondsRemaining,
-      botPhone: COMPANY_CONFIG.botPhone || '61400000000', // Returns configured bot phone
+      botPhone: COMPANY_CONFIG.botPhone,
       companyName: COMPANY_CONFIG.companyName
     }));
     return;
   }
 
-  // 2. Set WhatsApp Bot Phone Number (From Admin UI)
+  // 2. Set Config
   if (pathname === '/api/admin/config' && req.method === 'POST') {
     let body = '';
     req.on('data', chunk => { body += chunk; });
     req.on('end', () => {
       try {
-        const { botPhone, companyName } = JSON.parse(body);
+        const { botPhone, companyName, initialUsers, initialLogs } = JSON.parse(body);
         if (botPhone) COMPANY_CONFIG.botPhone = botPhone.replace(/[^0-9]/g, '');
         if (companyName) COMPANY_CONFIG.companyName = companyName;
+
+        // Allow syncing local persistent data to server
+        if (Array.isArray(initialUsers) && DB.users.length === 0) {
+          DB.users = initialUsers;
+        }
+        if (Array.isArray(initialLogs) && DB.logs.length === 0) {
+          DB.logs = initialLogs;
+        }
+
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: true, config: COMPANY_CONFIG }));
       } catch (err) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Invalid config' }));
+        res.end(JSON.stringify({ error: 'Invalid payload' }));
       }
     });
     return;
   }
 
-  // 3. Scan Attendance (Web Scan or Reverse Camera Scan)
+  // 3. Scan & Attendance Processing
   if (pathname === '/api/attendance/scan' && req.method === 'POST') {
     let body = '';
     req.on('data', chunk => { body += chunk; });
     req.on('end', () => {
       try {
         const data = JSON.parse(body);
-        const { userId, token, method = 'WEB_SCAN' } = data;
+        const { userId, token, method = 'WEB_SCAN', forcedType } = data;
 
-        let user = DB.users.find(u => u.id === userId || u.username === userId || u.phone === userId);
+        let user = DB.users.find(u => u.id === userId || u.phone === userId);
         if (!user) {
-          // Auto-register guest if not found
           user = {
             id: `usr-${Date.now()}`,
-            name: data.userName || `User ${userId}`,
-            username: userId,
+            name: data.userName || `User (${userId})`,
             phone: userId,
             department: 'General',
             shiftStart: '09:00',
@@ -155,21 +206,23 @@ const server = http.createServer((req, res) => {
           }
         }
 
-        const eventType = user.status === 'IN' ? 'CHECK_OUT' : 'CHECK_IN';
+        const eventType = forcedType || (user.status === 'IN' ? 'CHECK_OUT' : 'CHECK_IN');
         user.status = eventType === 'CHECK_IN' ? 'IN' : 'OUT';
 
+        const now = new Date();
         const logEntry = {
           id: `log-${Date.now()}`,
           userId: user.id,
           userName: user.name,
           eventType,
-          time: new Date().toISOString(),
+          time: now.toISOString(),
+          formattedTime: formatTimeWithSeconds(now),
           method,
           isLate: false
         };
 
         DB.logs.unshift(logEntry);
-        const hoursData = calculateHoursForUser(user.id);
+        const hoursData = calculateDetailedHours(user.id);
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
@@ -177,9 +230,10 @@ const server = http.createServer((req, res) => {
           message: `${eventType === 'CHECK_IN' ? '✅ Clocked In' : '🔴 Clocked Out'} Successfully!`,
           eventType,
           userName: user.name,
-          time: logEntry.time,
-          method,
-          totalHours: hoursData.hours
+          time: logEntry.formattedTime,
+          totalHoursToday: hoursData.todayFormatted,
+          clockIn: hoursData.todayFirstIn,
+          clockOut: hoursData.todayLastOut
         }));
       } catch (err) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
@@ -189,14 +243,12 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // 4. WhatsApp Webhook (Meta Official Cloud API & Webhook Verification)
+  // 4. WhatsApp Webhook (Meta Inbound Message & Response)
   if (pathname === '/api/whatsapp/webhook') {
-    // Meta Webhook Verification (GET)
     if (req.method === 'GET') {
       const mode = parsedUrl.query['hub.mode'];
       const verifyToken = parsedUrl.query['hub.verify_token'];
       const challenge = parsedUrl.query['hub.challenge'];
-
       if (mode === 'subscribe' && verifyToken === (process.env.WHATSAPP_VERIFY_TOKEN || 'smartattend_verify_123')) {
         res.writeHead(200, { 'Content-Type': 'text/plain' });
         res.end(challenge);
@@ -207,7 +259,6 @@ const server = http.createServer((req, res) => {
       return;
     }
 
-    // Meta Webhook Inbound Message (POST)
     if (req.method === 'POST') {
       let body = '';
       req.on('data', chunk => { body += chunk; });
@@ -217,7 +268,6 @@ const server = http.createServer((req, res) => {
           let senderPhone = payload.senderPhone;
           let messageText = payload.messageText;
 
-          // Parse Meta Cloud API standard JSON payload if received from real Meta
           if (payload.entry && payload.entry[0]?.changes[0]?.value?.messages) {
             const msg = payload.entry[0].changes[0].value.messages[0];
             senderPhone = msg.from;
@@ -234,8 +284,7 @@ const server = http.createServer((req, res) => {
           if (!user) {
             user = {
               id: `usr-${Date.now()}`,
-              name: `WhatsApp (${senderPhone})`,
-              username: senderPhone,
+              name: `Employee (${senderPhone})`,
               phone: senderPhone,
               department: 'General',
               shiftStart: '09:00',
@@ -244,13 +293,14 @@ const server = http.createServer((req, res) => {
             DB.users.push(user);
           }
 
+          // Clean token
           const cleanToken = messageText.replace(/[^A-Za-z0-9]/g, '').toUpperCase().replace(/^IN/, '').replace(/^OUT/, '');
           const verifyResult = verifyTOTP(COMPANY_CONFIG.kioskSecret, cleanToken);
 
           if (!verifyResult.valid) {
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({
-              replyMessage: '⚠️ Expired or Invalid QR Code. Please scan the current code on the kiosk screen.'
+              replyMessage: '⚠️ Expired or Invalid QR Code. Please scan the latest code on the kiosk monitor.'
             }));
             return;
           }
@@ -258,25 +308,31 @@ const server = http.createServer((req, res) => {
           const eventType = user.status === 'IN' ? 'CHECK_OUT' : 'CHECK_IN';
           user.status = eventType === 'CHECK_IN' ? 'IN' : 'OUT';
 
+          const now = new Date();
+          const timestampFormatted = formatTimeWithSeconds(now);
+          const dateFormatted = now.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
+
           const logEntry = {
             id: `log-${Date.now()}`,
             userId: user.id,
             userName: user.name,
             eventType,
-            time: new Date().toISOString(),
+            time: now.toISOString(),
+            formattedTime: timestampFormatted,
             method: 'WHATSAPP',
             isLate: false
           };
 
           DB.logs.unshift(logEntry);
-          const hoursData = calculateHoursForUser(user.id);
+          const hoursData = calculateDetailedHours(user.id);
 
+          // Professional Detailed WhatsApp Message
           const replyMessage = eventType === 'CHECK_IN'
-            ? `✅ *Attendance Recorded!*\nHi ${user.name}, you clocked IN at ${new Date().toLocaleTimeString()}.\nHave a productive day! 🚀`
-            : `🔴 *Clocked Out!*\nHi ${user.name}, you clocked OUT at ${new Date().toLocaleTimeString()}.\nToday's Total: ${hoursData.hours}. See you tomorrow! 👋`;
+            ? `✅ *CLOCK-IN RECORDED*\n━━━━━━━━━━━━━━━━━━━━━\n👤 *Employee:* ${user.name}\n⏰ *Time:* ${timestampFormatted}\n📅 *Date:* ${dateFormatted}\n🏢 *Status:* Checked IN (Shift Active)\n━━━━━━━━━━━━━━━━━━━━━\nHave a great shift! 🚀`
+            : `🔴 *CLOCK-OUT RECORDED*\n━━━━━━━━━━━━━━━━━━━━━\n👤 *Employee:* ${user.name}\n⏰ *Clock-In:* ${hoursData.todayFirstIn}\n⏰ *Clock-Out:* ${timestampFormatted}\n⏱️ *Today's Duration:* ${hoursData.todayFormatted}\n📅 *Date:* ${dateFormatted}\n━━━━━━━━━━━━━━━━━━━━━\nSee you next shift! 👋`;
 
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ success: true, replyMessage, logEntry }));
+          res.end(JSON.stringify({ success: true, replyMessage, logEntry, user }));
         } catch (e) {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ status: 'ok' }));
@@ -286,14 +342,22 @@ const server = http.createServer((req, res) => {
     }
   }
 
-  // 5. Admin Data
+  // 5. Admin Data (With Detailed Timesheet Breakdown per User)
   if (pathname === '/api/admin/data' && req.method === 'GET') {
     const totalUsers = DB.users.length;
     const checkedInUsers = DB.users.filter(u => u.status === 'IN').length;
-    const userSummary = DB.users.map(u => ({
-      ...u,
-      hours: calculateHoursForUser(u.id).hours
-    }));
+
+    const userSummary = DB.users.map(u => {
+      const detailed = calculateDetailedHours(u.id);
+      return {
+        ...u,
+        clockIn: detailed.todayFirstIn,
+        clockOut: detailed.todayLastOut,
+        hoursToday: detailed.todayFormatted,
+        hoursWeekly: detailed.weeklyFormatted,
+        hoursMonthly: detailed.monthlyFormatted
+      };
+    });
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
@@ -316,14 +380,13 @@ const server = http.createServer((req, res) => {
     req.on('data', chunk => { body += chunk; });
     req.on('end', () => {
       try {
-        const { name, username, phone, department, shiftStart } = JSON.parse(body);
+        const { name, phone, department } = JSON.parse(body);
         const newUser = {
           id: `usr-${Date.now()}`,
           name,
-          username: username || name.toLowerCase().replace(/\s+/g, ''),
           phone: phone.replace(/[^0-9+]/g, ''),
           department: department || 'General',
-          shiftStart: shiftStart || '09:00',
+          shiftStart: '09:00',
           status: 'OUT'
         };
         DB.users.push(newUser);
@@ -337,7 +400,26 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // --- STATIC FILES ---
+  // 7. Delete User API
+  if (pathname === '/api/admin/users/delete' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const { userId } = JSON.parse(body);
+        DB.users = DB.users.filter(u => u.id !== userId);
+        DB.logs = DB.logs.filter(l => l.userId !== userId);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true }));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Delete error' }));
+      }
+    });
+    return;
+  }
+
+  // Static File Serving
   let filePath = path.join(__dirname, 'public', pathname === '/' ? 'index.html' : pathname);
   const extname = path.extname(filePath);
   let contentType = 'text/html';
