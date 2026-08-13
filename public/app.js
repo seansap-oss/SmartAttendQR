@@ -6,6 +6,7 @@ let currentKioskToken = '';
 let kioskTimerInterval = null;
 let liveClockInterval = null;
 let activeBindingUserId = null;
+let activeTimesheetUserId = null;
 
 // LocalStorage Persistent Stores
 let localEmployees = JSON.parse(localStorage.getItem('smartattend_employees') || '[]');
@@ -135,14 +136,13 @@ async function updateKioskToken() {
   }
 }
 
-// --- FETCH ADMIN DATA & UPDATE ROSTER ---
+// --- FETCH ADMIN DATA ---
 async function fetchAdminData() {
   try {
     const res = await fetch('/api/admin/data');
     const data = await res.json();
 
     if (data.employees && data.employees.length > 0) {
-      // Merge with local device binding flags
       localEmployees = data.employees.map(de => {
         const local = localEmployees.find(le => le.id === de.id);
         return {
@@ -162,20 +162,55 @@ async function fetchAdminData() {
     const displayLogs = data.logs && data.logs.length > 0 ? data.logs : localLogs;
 
     const checkedInCount = displayEmployees.filter(e => e.status === 'IN').length;
-    const boundDevicesCount = displayEmployees.filter(e => e.isDeviceBound || !!e.deviceToken).length;
+    const lateCount = displayEmployees.filter(e => e.isLateToday).length;
+    const otCount = displayEmployees.filter(e => e.hasOvertime).length;
 
     document.getElementById('kpi-total-emp').textContent = displayEmployees.length;
     document.getElementById('kpi-checked-in').textContent = checkedInCount;
     document.getElementById('kpi-checked-out').textContent = displayEmployees.length - checkedInCount;
-    document.getElementById('kpi-bound-devices').textContent = `${boundDevicesCount} / ${displayEmployees.length}`;
+    document.getElementById('kpi-late-count').textContent = lateCount;
+    document.getElementById('kpi-overtime-count').textContent = otCount;
 
-    renderAdminRoster(displayEmployees);
+    applyFilters();
     renderAdminLogs(displayLogs);
     renderKioskTicker(displayLogs);
     populateManualUserSelect(displayEmployees);
   } catch (e) {
     console.error("Error fetching admin data", e);
   }
+}
+
+// --- ADVANCED SEARCH & FILTERING ENGINE ---
+function applyFilters() {
+  const searchQuery = (document.getElementById('filter-search-input')?.value || '').toLowerCase().trim();
+  const deptFilter = document.getElementById('filter-dept-select')?.value || 'ALL';
+  const statusFilter = document.getElementById('filter-status-select')?.value || 'ALL';
+
+  let filtered = localEmployees.filter(e => {
+    // Search match
+    const matchSearch = !searchQuery ||
+      e.name.toLowerCase().includes(searchQuery) ||
+      (e.phone && e.phone.includes(searchQuery)) ||
+      (e.department && e.department.toLowerCase().includes(searchQuery));
+
+    // Department match
+    const matchDept = deptFilter === 'ALL' || e.department === deptFilter;
+
+    // Status match
+    let matchStatus = true;
+    if (statusFilter === 'IN') matchStatus = e.status === 'IN';
+    else if (statusFilter === 'OUT') matchStatus = e.status === 'OUT';
+    else if (statusFilter === 'LATE') matchStatus = !!e.isLateToday;
+    else if (statusFilter === 'OVERTIME') matchStatus = !!e.hasOvertime;
+    else if (statusFilter === 'UNBOUND') matchStatus = !e.isDeviceBound && !e.deviceToken;
+
+    return matchSearch && matchDept && matchStatus;
+  });
+
+  const countEl = document.getElementById('filtered-count');
+  if (countEl) countEl.textContent = filtered.length;
+
+  renderAdminRoster(filtered);
 }
 
 function renderAdminRoster(employees) {
@@ -185,8 +220,8 @@ function renderAdminRoster(employees) {
   if (employees.length === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="8" class="px-4 py-8 text-center text-xs text-slate-500">
-          No employees registered yet. Click <strong class="text-emerald-400">"Register Employee"</strong> above to add your team.
+        <td colspan="9" class="px-4 py-8 text-center text-xs text-slate-500">
+          No employees match your search criteria.
         </td>
       </tr>
     `;
@@ -200,9 +235,25 @@ function renderAdminRoster(employees) {
     const hoursVal = e.hoursToday || '0h 0m 0s';
     const isBound = e.isDeviceBound || !!e.deviceToken;
 
+    const typeTag = e.employmentType === 'PART_TIME'
+      ? `<span class="px-1.5 py-0.5 bg-blue-500/10 text-blue-400 rounded text-[9px] font-bold">PT (${e.targetDailyHours || 4}h)</span>`
+      : e.employmentType === 'CASUAL'
+      ? `<span class="px-1.5 py-0.5 bg-purple-500/10 text-purple-400 rounded text-[9px] font-bold">Casual</span>`
+      : `<span class="px-1.5 py-0.5 bg-slate-800 text-slate-400 rounded text-[9px] font-bold">FT (8h)</span>`;
+
+    const shiftDisplay = `${e.shiftStart || '09:00'} - ${e.shiftEnd || '17:00'}`;
+
+    const lateBadge = e.isLateToday
+      ? `<span class="inline-flex items-center px-1.5 py-0.5 bg-rose-500/20 text-rose-300 border border-rose-500/40 rounded text-[9px] font-bold ml-1.5"><i class="fa-solid fa-triangle-exclamation mr-1"></i> Late ${e.lateMinutes}m</span>`
+      : '';
+
+    const otBadge = e.hasOvertime
+      ? `<span class="inline-flex items-center px-1.5 py-0.5 bg-purple-500/20 text-purple-300 border border-purple-500/40 rounded text-[9px] font-bold ml-1.5">+${e.overtimeHours} OT</span>`
+      : '';
+
     const deviceBadge = isBound
-      ? `<button onclick="handleRebindClick('${e.id}', '${e.name}')" class="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 transition"><i class="fa-solid fa-mobile-screen-button mr-1"></i> Phone Linked</button>`
-      : `<button onclick="openBindModal('${e.id}', '${e.name}')" class="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 transition"><i class="fa-solid fa-qrcode mr-1"></i> Bind Phone</button>`;
+      ? `<button onclick="handleRebindClick('${e.id}', '${e.name}')" class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 transition"><i class="fa-solid fa-mobile-screen-button mr-1"></i> Phone Linked</button>`
+      : `<button onclick="openBindModal('${e.id}', '${e.name}')" class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 transition"><i class="fa-solid fa-qrcode mr-1"></i> Bind Phone</button>`;
 
     return `
       <tr class="hover:bg-slate-800/40 transition cursor-pointer" onclick="openTimesheetModal('${e.id}')">
@@ -211,24 +262,37 @@ function renderAdminRoster(employees) {
             ${e.name.charAt(0)}
           </div>
           <div>
-            <div class="font-bold text-slate-100">${e.name}</div>
+            <div class="font-bold text-slate-100 flex items-center gap-1.5">
+              <span>${e.name}</span>
+              ${typeTag}
+            </div>
             <div class="text-[11px] text-slate-400 font-mono">${e.phone ? '+' + e.phone.replace(/[^0-9]/g, '') : 'No Phone'}</div>
           </div>
         </td>
-        <td class="px-4 py-3.5 text-slate-300">${e.department || 'General'}</td>
+        <td class="px-4 py-3.5 text-slate-300 font-medium">${e.department || 'General'}</td>
+        <td class="px-4 py-3.5 font-mono text-[11px] text-slate-400">${shiftDisplay}</td>
         <td class="px-4 py-3.5" onclick="event.stopPropagation()">${deviceBadge}</td>
         <td class="px-4 py-3.5">
-          <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold ${isIn ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-800 text-slate-400'}">
-            <span class="w-1.5 h-1.5 rounded-full ${isIn ? 'bg-emerald-400 mr-1.5 pulse-green' : 'bg-slate-500 mr-1.5'}"></span>
-            ${isIn ? 'Checked In' : 'Checked Out'}
-          </span>
+          <div class="flex items-center">
+            <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold ${isIn ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-800 text-slate-400'}">
+              <span class="w-1.5 h-1.5 rounded-full ${isIn ? 'bg-emerald-400 mr-1.5 pulse-green' : 'bg-slate-500 mr-1.5'}"></span>
+              ${isIn ? 'Clocked In' : 'Clocked Out'}
+            </span>
+            ${lateBadge}
+          </div>
         </td>
         <td class="px-4 py-3.5 font-mono text-xs text-slate-300">${clockInVal}</td>
         <td class="px-4 py-3.5 font-mono text-xs text-slate-300">${clockOutVal}</td>
-        <td class="px-4 py-3.5 font-mono font-bold text-xs text-emerald-400">${hoursVal}</td>
-        <td class="px-4 py-3.5 text-right space-x-2" onclick="event.stopPropagation()">
-          <button onclick="openTimesheetModal('${e.id}')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold rounded-lg border border-slate-700">
+        <td class="px-4 py-3.5 font-mono font-bold text-xs text-emerald-400">
+          <span>${hoursVal}</span>
+          ${otBadge}
+        </td>
+        <td class="px-4 py-3.5 text-right space-x-1.5" onclick="event.stopPropagation()">
+          <button onclick="openTimesheetModal('${e.id}')" title="View Detailed Timesheet" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold rounded-lg border border-slate-700">
             <i class="fa-solid fa-chart-simple text-blue-400 mr-1"></i> Timesheet
+          </button>
+          <button onclick="openEditModal('${e.id}')" title="Edit Roster & Info" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold rounded-lg border border-slate-700">
+            <i class="fa-solid fa-pen-to-square text-amber-400"></i>
           </button>
         </td>
       </tr>
@@ -304,6 +368,86 @@ function renderKioskTicker(logs) {
   }).join('');
 }
 
+// --- EXPORT TO EXCEL (CSV) ENGINE ---
+function exportCompanyTimesheetCSV() {
+  if (localEmployees.length === 0) {
+    showToast('Export Error', 'No employee records to export', true);
+    return;
+  }
+
+  const today = new Date().toISOString().split('T')[0];
+  const headers = ["Employee ID", "Full Name", "Department", "Roster Type", "Target Daily Hours", "Shift Schedule", "Current Status", "First Clock-In", "Last Clock-Out", "Regular Hours", "Overtime Hours", "Total Hours Today", "Weekly Hours (7d)", "Monthly Hours (30d)", "Late Today?"];
+
+  const rows = localEmployees.map(e => [
+    `"${e.id}"`,
+    `"${e.name}"`,
+    `"${e.department || 'General'}"`,
+    `"${e.employmentType || 'FULL_TIME'}"`,
+    `"${e.targetDailyHours || 8}"`,
+    `"${e.shiftStart || '09:00'} - ${e.shiftEnd || '17:00'}"`,
+    `"${e.status === 'IN' ? 'Clocked In' : 'Clocked Out'}"`,
+    `"${e.clockIn || '--'}"`,
+    `"${e.clockOut || '--'}"`,
+    `"${e.regularHours || e.hoursToday || '0h 0m 0s'}"`,
+    `"${e.overtimeHours || '0h 0m 0s'}"`,
+    `"${e.hoursToday || '0h 0m 0s'}"`,
+    `"${e.hoursWeekly || '0h 0m 0s'}"`,
+    `"${e.hoursMonthly || '0h 0m 0s'}"`,
+    `"${e.isLateToday ? `Late (${e.lateMinutes}m)` : 'On Time'}"`
+  ]);
+
+  const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+  const encodedUri = encodeURI(csvContent);
+  const link = document.createElement("a");
+  link.setAttribute("href", encodedUri);
+  link.setAttribute("download", `SmartAttend_Company_Timesheet_${today}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  showToast('Excel CSV Exported', `Company timesheet for ${localEmployees.length} employees downloaded.`);
+}
+
+function exportSingleEmployeeTimesheetCSV() {
+  if (!activeTimesheetUserId) return;
+  const emp = localEmployees.find(e => e.id === activeTimesheetUserId);
+  if (!emp) return;
+
+  const today = new Date().toISOString().split('T')[0];
+  const userPunches = localLogs.filter(l => l.userId === emp.id);
+
+  let csvContent = "data:text/csv;charset=utf-8,";
+  csvContent += `"EMPLOYEE TIMESHEET REPORT"\n`;
+  csvContent += `"Employee Name:","${emp.name}"\n`;
+  csvContent += `"Department:","${emp.department || 'General'}"\n`;
+  csvContent += `"Employment Type:","${emp.employmentType || 'FULL_TIME'} (${emp.targetDailyHours || 8}h target)"\n`;
+  csvContent += `"Report Generated:","${new Date().toLocaleString()}"\n\n`;
+
+  csvContent += `"Today's Duration","${emp.hoursToday || '0h 0m 0s'}"\n`;
+  csvContent += `"Overtime Today","${emp.overtimeHours || '0h 0m 0s'}"\n`;
+  csvContent += `"Weekly Total (7d)","${emp.hoursWeekly || '0h 0m 0s'}"\n`;
+  csvContent += `"Monthly Total (30d)","${emp.hoursMonthly || '0h 0m 0s'}"\n\n`;
+
+  csvContent += `"PUNCH AUDIT TRAIL"\n`;
+  csvContent += `"Punch ID","Event Type","Date","Exact Time","Method"\n`;
+
+  userPunches.forEach(p => {
+    const timeFormatted = p.formattedTime || new Date(p.time).toLocaleTimeString();
+    const dateFormatted = new Date(p.time).toLocaleDateString();
+    csvContent += `"${p.id}","${p.eventType}","${dateFormatted}","${timeFormatted}","${p.method || 'DEVICE_SCAN'}"\n`;
+  });
+
+  const encodedUri = encodeURI(csvContent);
+  const link = document.createElement("a");
+  link.setAttribute("href", encodedUri);
+  link.setAttribute("download", `Timesheet_${emp.name.replace(/\s+/g, '_')}_${today}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  showToast('Timesheet Exported', `Timesheet CSV for ${emp.name} downloaded.`);
+}
+
 // --- ONE-TIME DEVICE ACTIVATION MODAL ---
 function openBindModal(userId, userName) {
   activeBindingUserId = userId;
@@ -333,7 +477,7 @@ function openBindModal(userId, userName) {
 }
 
 function handleRebindClick(userId, userName) {
-  if (confirm(`A phone is already bound to "${userName}".\n\nDo you want to reset and generate a new QR code to link a new phone?`)) {
+  if (confirm(`A phone is already bound to "${userName}".\n\nDo you want to reset and generate a new QR code to link a different phone?`)) {
     openBindModal(userId, userName);
   }
 }
@@ -346,7 +490,6 @@ function copyBindUrl() {
 }
 
 function closeBindModal() {
-  // Update local binding state to Phone Linked
   if (activeBindingUserId) {
     const emp = localEmployees.find(e => e.id === activeBindingUserId);
     if (emp) {
@@ -359,19 +502,21 @@ function closeBindModal() {
   document.getElementById('bind-device-modal').classList.add('hidden');
   activeBindingUserId = null;
   fetchAdminData();
-  showToast('Binding Complete', 'Phone binding registered. Employee can now scan reception kiosk.');
+  showToast('Binding Complete', 'Phone binding registered.');
 }
 
 // --- TIMESHEET MODAL ---
 function openTimesheetModal(userId) {
+  activeTimesheetUserId = userId;
   const emp = localEmployees.find(e => e.id === userId);
   if (!emp) return;
 
   document.getElementById('detail-name').textContent = emp.name;
-  document.getElementById('detail-phone').textContent = `${emp.department || 'General'} • ${emp.phone ? '+' + emp.phone.replace(/[^0-9]/g, '') : 'No Phone'}`;
+  document.getElementById('detail-meta').textContent = `${emp.department || 'General'} • ${emp.employmentType || 'FULL_TIME'} (${emp.targetDailyHours || 8}h target) • Shift: ${emp.shiftStart || '09:00'} - ${emp.shiftEnd || '17:00'}`;
   document.getElementById('detail-avatar').textContent = emp.name.charAt(0);
 
   document.getElementById('detail-today-hours').textContent = emp.hoursToday || '0h 0m 0s';
+  document.getElementById('detail-overtime-hours').textContent = emp.overtimeHours || '0h 0m 0s';
   document.getElementById('detail-weekly-hours').textContent = emp.hoursWeekly || '0h 0m 0s';
   document.getElementById('detail-monthly-hours').textContent = emp.hoursMonthly || '0h 0m 0s';
 
@@ -399,14 +544,76 @@ function openTimesheetModal(userId) {
     }).join('');
   }
 
-  const unbindBtn = document.getElementById('detail-unbind-btn');
-  unbindBtn.onclick = () => unbindDevice(userId, emp.name);
+  document.getElementById('detail-edit-btn').onclick = () => {
+    closeTimesheetModal();
+    openEditModal(userId);
+  };
+  document.getElementById('detail-unbind-btn').onclick = () => unbindDevice(userId, emp.name);
+  document.getElementById('detail-delete-btn').onclick = () => deleteEmployee(userId, emp.name);
 
   document.getElementById('timesheet-modal').classList.remove('hidden');
 }
 
 function closeTimesheetModal() {
   document.getElementById('timesheet-modal').classList.add('hidden');
+  activeTimesheetUserId = null;
+}
+
+// --- EDIT EMPLOYEE MODAL ---
+function openEditModal(userId) {
+  const emp = localEmployees.find(e => e.id === userId);
+  if (!emp) return;
+
+  document.getElementById('edit-emp-id').value = emp.id;
+  document.getElementById('edit-name').value = emp.name;
+  document.getElementById('edit-dept').value = emp.department || 'General';
+  document.getElementById('edit-phone').value = emp.phone || '';
+  document.getElementById('edit-emp-type').value = emp.employmentType || 'FULL_TIME';
+  document.getElementById('edit-target-hours').value = emp.targetDailyHours || (emp.employmentType === 'PART_TIME' ? 4 : 8);
+  document.getElementById('edit-shift-start').value = emp.shiftStart || '09:00';
+  document.getElementById('edit-shift-end').value = emp.shiftEnd || '17:00';
+
+  document.getElementById('edit-employee-modal').classList.remove('hidden');
+}
+
+function closeEditModal() {
+  document.getElementById('edit-employee-modal').classList.add('hidden');
+}
+
+async function handleEditEmployeeSubmit(e) {
+  e.preventDefault();
+  const id = document.getElementById('edit-emp-id').value;
+  const name = document.getElementById('edit-name').value.trim();
+  const department = document.getElementById('edit-dept').value.trim();
+  const phone = document.getElementById('edit-phone').value.trim();
+  const employmentType = document.getElementById('edit-emp-type').value;
+  const targetDailyHours = parseFloat(document.getElementById('edit-target-hours').value) || 8;
+  const shiftStart = document.getElementById('edit-shift-start').value;
+  const shiftEnd = document.getElementById('edit-shift-end').value;
+
+  const emp = localEmployees.find(emp => emp.id === id);
+  if (emp) {
+    emp.name = name;
+    emp.department = department;
+    emp.phone = phone;
+    emp.employmentType = employmentType;
+    emp.targetDailyHours = targetDailyHours;
+    emp.shiftStart = shiftStart;
+    emp.shiftEnd = shiftEnd;
+    localStorage.setItem('smartattend_employees', JSON.stringify(localEmployees));
+  }
+
+  try {
+    await fetch('/api/admin/employees/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, name, department, phone, employmentType, targetDailyHours, shiftStart, shiftEnd })
+    });
+  } catch (err) {}
+
+  closeEditModal();
+  fetchAdminData();
+  showToast('Roster Updated', `Profile & Shift schedule for "${name}" updated.`);
 }
 
 async function unbindDevice(userId, userName) {
@@ -430,7 +637,39 @@ async function unbindDevice(userId, userName) {
   showToast('Phone Unbound', `Device reset for "${userName}".`);
 }
 
+async function deleteEmployee(userId, userName) {
+  if (!confirm(`Are you sure you want to permanently delete employee "${userName}" and all their timesheet logs?`)) return;
+
+  localEmployees = localEmployees.filter(e => e.id !== userId);
+  localLogs = localLogs.filter(l => l.userId !== userId);
+  localStorage.setItem('smartattend_employees', JSON.stringify(localEmployees));
+  localStorage.setItem('smartattend_logs', JSON.stringify(localLogs));
+
+  await fetch('/api/admin/employees/delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId })
+  });
+
+  closeTimesheetModal();
+  fetchAdminData();
+  showToast('Employee Deleted', `"${userName}" has been removed.`);
+}
+
 // --- ADD EMPLOYEE FORM ---
+function handleNewEmpTypeChange() {
+  const type = document.getElementById('new-emp-type').value;
+  const targetInput = document.getElementById('new-target-hours');
+  const shiftEnd = document.getElementById('new-shift-end');
+  if (type === 'PART_TIME') {
+    targetInput.value = 4;
+    shiftEnd.value = '13:00';
+  } else if (type === 'FULL_TIME') {
+    targetInput.value = 8;
+    shiftEnd.value = '17:00';
+  }
+}
+
 function openAddUserModal() {
   document.getElementById('add-user-modal').classList.remove('hidden');
 }
@@ -444,6 +683,10 @@ async function handleAddUserSubmit(e) {
   const name = document.getElementById('new-name').value.trim();
   const phone = document.getElementById('new-phone').value.trim().replace(/[^0-9+]/g, '');
   const department = document.getElementById('new-dept').value.trim();
+  const employmentType = document.getElementById('new-emp-type').value;
+  const targetDailyHours = parseFloat(document.getElementById('new-target-hours').value) || 8;
+  const shiftStart = document.getElementById('new-shift-start').value;
+  const shiftEnd = document.getElementById('new-shift-end').value;
 
   if (!name) {
     showToast('Missing Field', 'Please provide employee name', true);
@@ -455,10 +698,19 @@ async function handleAddUserSubmit(e) {
     name,
     phone,
     department: department || 'General',
+    employmentType,
+    targetDailyHours,
+    shiftStart,
+    shiftEnd,
     status: 'OUT',
     clockIn: '--',
     clockOut: '--',
     hoursToday: '0h 0m 0s',
+    regularHours: '0h 0m 0s',
+    overtimeHours: '0h 0m 0s',
+    hasOvertime: false,
+    isLateToday: false,
+    lateMinutes: 0,
     deviceToken: null,
     isDeviceBound: false
   };
@@ -470,7 +722,7 @@ async function handleAddUserSubmit(e) {
     await fetch('/api/admin/employees', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, phone, department, id: newEmp.id })
+      body: JSON.stringify(newEmp)
     });
   } catch (err) {}
 
@@ -479,7 +731,7 @@ async function handleAddUserSubmit(e) {
   closeAddUserModal();
 
   fetchAdminData();
-  showToast('Employee Registered', `"${name}" registered. Click "Bind Phone" to link their device.`);
+  showToast('Employee Registered', `"${name}" added. Click "Bind Phone" to link their device.`);
 }
 
 // --- MANUAL PUNCH MODAL ---
@@ -547,12 +799,6 @@ async function handleManualPunchSubmit(e) {
 
   fetchAdminData();
   showToast('Attendance Recorded', `${emp ? emp.name : 'Employee'} marked as ${forcedType === 'CHECK_IN' ? 'Clocked IN' : 'Clocked OUT'}`);
-}
-
-function handleEmployeeSearch() {
-  const query = document.getElementById('employee-search-input').value.toLowerCase();
-  const filtered = localEmployees.filter(e => e.name.toLowerCase().includes(query) || (e.department && e.department.toLowerCase().includes(query)));
-  renderAdminRoster(filtered);
 }
 
 function clearLogsAudit() {
