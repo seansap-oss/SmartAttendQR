@@ -14,7 +14,6 @@ let SYSTEM_CONFIG = {
 let DB = {
   employees: [],
   logs: [],
-  activationKeys: new Map(),
   usedTokens: new Set()
 };
 
@@ -138,74 +137,28 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // 2. Generate / Register Device Activation Key
-  if (pathname === '/api/devices/generate-activation' && req.method === 'POST') {
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', () => {
-      try {
-        const { userId, userName, activationCode: clientCode } = JSON.parse(body);
-        let emp = DB.employees.find(e => e.id === userId);
-        if (!emp && userName) {
-          emp = {
-            id: userId,
-            name: userName,
-            phone: '',
-            department: 'General',
-            status: 'OUT',
-            deviceToken: null
-          };
-          DB.employees.push(emp);
-        }
-
-        const activationCode = clientCode || `ACT-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
-        DB.activationKeys.set(activationCode, {
-          userId: emp ? emp.id : userId,
-          userName: emp ? emp.name : (userName || 'Employee'),
-          expiresAt: Date.now() + 48 * 3600 * 1000
-        });
-
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          success: true,
-          activationCode,
-          userId: emp ? emp.id : userId,
-          userName: emp ? emp.name : userName
-        }));
-      } catch (err) {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Invalid request' }));
-      }
-    });
-    return;
-  }
-
-  // 3. Complete Device Binding
+  // 2. Complete Device Binding (Stateless & Immediate)
   if (pathname === '/api/devices/bind' && req.method === 'POST') {
     let body = '';
     req.on('data', chunk => { body += chunk; });
     req.on('end', () => {
       try {
-        const { activationCode, deviceToken, deviceName, userId: fallbackUserId, userName: fallbackUserName } = JSON.parse(body);
-        const activation = DB.activationKeys.get(activationCode);
+        const { userId, userName, deviceToken, deviceName } = JSON.parse(body);
 
-        let targetUserId = activation ? activation.userId : fallbackUserId;
-        let targetUserName = activation ? activation.userName : fallbackUserName;
-
-        let emp = DB.employees.find(e => e.id === targetUserId);
-        if (!emp && targetUserId) {
+        let emp = DB.employees.find(e => e.id === userId);
+        if (!emp) {
           emp = {
-            id: targetUserId,
-            name: targetUserName || 'Employee',
+            id: userId || `emp-${Date.now()}`,
+            name: userName || 'Employee',
             phone: '',
             department: 'General',
             status: 'OUT',
-            deviceToken: null
+            deviceToken: deviceToken,
+            deviceName: deviceName || 'Personal Phone',
+            boundAt: new Date().toISOString()
           };
           DB.employees.push(emp);
-        }
-
-        if (emp) {
+        } else {
           emp.deviceToken = deviceToken;
           emp.deviceName = deviceName || 'Personal Phone';
           emp.boundAt = new Date().toISOString();
@@ -214,11 +167,11 @@ const server = http.createServer((req, res) => {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
           success: true,
-          message: `Phone successfully locked to ${emp ? emp.name : 'Employee'}!`,
+          message: `Phone successfully locked to ${emp.name}!`,
           employee: {
-            id: emp ? emp.id : targetUserId,
-            name: emp ? emp.name : targetUserName,
-            department: emp ? emp.department : 'General'
+            id: emp.id,
+            name: emp.name,
+            department: emp.department
           }
         }));
       } catch (err) {
@@ -229,16 +182,29 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // 4. Verify Bound Device & Load Employee Status
+  // 3. Verify Bound Device & Load Employee Status
   if (pathname === '/api/devices/verify' && req.method === 'POST') {
     let body = '';
     req.on('data', chunk => { body += chunk; });
     req.on('end', () => {
       try {
-        const { deviceToken } = JSON.parse(body);
-        const emp = DB.employees.find(e => e.deviceToken === deviceToken);
+        const { deviceToken, fallbackUserId, fallbackUserName } = JSON.parse(body);
 
-        if (!emp) {
+        let emp = DB.employees.find(e => e.deviceToken === deviceToken || (fallbackUserId && e.id === fallbackUserId));
+        if (!emp && fallbackUserId && fallbackUserName) {
+          // Auto-sync in serverless cold start
+          emp = {
+            id: fallbackUserId,
+            name: fallbackUserName,
+            phone: '',
+            department: 'General',
+            status: 'OUT',
+            deviceToken: deviceToken
+          };
+          DB.employees.push(emp);
+        }
+
+        if (!emp || !emp.deviceToken) {
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ bound: false, message: 'Unregistered Device' }));
           return;
@@ -267,7 +233,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // 5. Punch Attendance
+  // 4. Punch Attendance (Single-Tap Verification using Bound Device)
   if (pathname === '/api/attendance/punch' && req.method === 'POST') {
     let body = '';
     req.on('data', chunk => { body += chunk; });
@@ -275,8 +241,8 @@ const server = http.createServer((req, res) => {
       try {
         const { deviceToken, kioskToken, forcedType, method = 'DEVICE_SCAN', userId: fallbackUserId, userName: fallbackName } = JSON.parse(body);
 
-        let emp = DB.employees.find(e => e.deviceToken === deviceToken || e.id === fallbackUserId);
-        if (!emp && (deviceToken || fallbackUserId)) {
+        let emp = DB.employees.find(e => (deviceToken && e.deviceToken === deviceToken) || (fallbackUserId && e.id === fallbackUserId));
+        if (!emp && (fallbackUserId || deviceToken)) {
           emp = {
             id: fallbackUserId || `emp-${Date.now()}`,
             name: fallbackName || 'Employee',
@@ -290,15 +256,16 @@ const server = http.createServer((req, res) => {
 
         if (!emp) {
           res.writeHead(403, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ success: false, message: 'Device not authorized' }));
+          res.end(JSON.stringify({ success: false, message: 'Device not authorized. Please bind this phone first.' }));
           return;
         }
 
+        // Verify Kiosk 30s TOTP Token
         if (method === 'DEVICE_SCAN') {
           const verifyResult = verifyTOTP(SYSTEM_CONFIG.kioskSecret, kioskToken);
           if (!verifyResult.valid) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: false, message: 'QR Code Expired. Please scan the current code on the kiosk monitor.' }));
+            res.end(JSON.stringify({ success: false, message: 'QR Code Expired. Please scan the current code on the kiosk screen.' }));
             return;
           }
         }
@@ -332,17 +299,19 @@ const server = http.createServer((req, res) => {
           time: formattedTime,
           totalHoursToday: timesheet.todayFormatted,
           clockIn: timesheet.todayFirstIn,
-          clockOut: timesheet.todayLastOut
+          clockOut: timesheet.todayLastOut,
+          employee: emp,
+          logEntry
         }));
       } catch (err) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: false, message: 'Server error' }));
+        res.end(JSON.stringify({ success: false, message: 'Server error processing punch' }));
       }
     });
     return;
   }
 
-  // 6. Admin Data
+  // 5. Admin Data
   if (pathname === '/api/admin/data' && req.method === 'GET') {
     const totalEmployees = DB.employees.length;
     const checkedInCount = DB.employees.filter(e => e.status === 'IN').length;
@@ -376,7 +345,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // 7. Register Employee
+  // 6. Register Employee
   if (pathname === '/api/admin/employees' && req.method === 'POST') {
     let body = '';
     req.on('data', chunk => { body += chunk; });
@@ -402,7 +371,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // 8. Delete / Unbind Device
+  // 7. Delete / Unbind Device
   if (pathname === '/api/admin/employees/unbind' && req.method === 'POST') {
     let body = '';
     req.on('data', chunk => { body += chunk; });
@@ -423,6 +392,25 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // 8. Delete Employee API
+  if (pathname === '/api/admin/employees/delete' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const { userId } = JSON.parse(body);
+        DB.employees = DB.employees.filter(e => e.id !== userId);
+        DB.logs = DB.logs.filter(l => l.userId !== userId);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true }));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Delete error' }));
+      }
+    });
+    return;
+  }
+
   // 9. Sync Inbound Storage
   if (pathname === '/api/admin/sync' && req.method === 'POST') {
     let body = '';
@@ -431,10 +419,12 @@ const server = http.createServer((req, res) => {
       try {
         const { initialEmployees, initialLogs } = JSON.parse(body);
         if (Array.isArray(initialEmployees)) {
-          // Merge employees
           initialEmployees.forEach(ie => {
-            if (!DB.employees.find(e => e.id === ie.id)) {
+            const existing = DB.employees.find(e => e.id === ie.id);
+            if (!existing) {
               DB.employees.push(ie);
+            } else if (ie.deviceToken && !existing.deviceToken) {
+              existing.deviceToken = ie.deviceToken;
             }
           });
         }
@@ -455,7 +445,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Static Files
+  // Static File Serving
   let filePath = path.join(__dirname, 'public', pathname === '/' ? 'index.html' : pathname);
   const extname = path.extname(filePath);
   let contentType = 'text/html';

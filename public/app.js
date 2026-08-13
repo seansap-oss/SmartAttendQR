@@ -5,6 +5,7 @@ let bindQRCodeObj = null;
 let currentKioskToken = '';
 let kioskTimerInterval = null;
 let liveClockInterval = null;
+let activeBindingUserId = null;
 
 // LocalStorage Persistent Stores
 let localEmployees = JSON.parse(localStorage.getItem('smartattend_employees') || '[]');
@@ -141,7 +142,15 @@ async function fetchAdminData() {
     const data = await res.json();
 
     if (data.employees && data.employees.length > 0) {
-      localEmployees = data.employees;
+      // Merge with local device binding flags
+      localEmployees = data.employees.map(de => {
+        const local = localEmployees.find(le => le.id === de.id);
+        return {
+          ...de,
+          deviceToken: de.deviceToken || (local && local.deviceToken) || null,
+          isDeviceBound: de.isDeviceBound || (local && local.isDeviceBound) || false
+        };
+      });
       localStorage.setItem('smartattend_employees', JSON.stringify(localEmployees));
     }
     if (data.logs && data.logs.length > 0) {
@@ -149,7 +158,7 @@ async function fetchAdminData() {
       localStorage.setItem('smartattend_logs', JSON.stringify(localLogs));
     }
 
-    const displayEmployees = data.employees && data.employees.length > 0 ? data.employees : localEmployees;
+    const displayEmployees = localEmployees;
     const displayLogs = data.logs && data.logs.length > 0 ? data.logs : localLogs;
 
     const checkedInCount = displayEmployees.filter(e => e.status === 'IN').length;
@@ -192,7 +201,7 @@ function renderAdminRoster(employees) {
     const isBound = e.isDeviceBound || !!e.deviceToken;
 
     const deviceBadge = isBound
-      ? `<span class="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"><i class="fa-solid fa-mobile-screen-button mr-1"></i> Phone Linked</span>`
+      ? `<button onclick="handleRebindClick('${e.id}', '${e.name}')" class="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 transition"><i class="fa-solid fa-mobile-screen-button mr-1"></i> Phone Linked</button>`
       : `<button onclick="openBindModal('${e.id}', '${e.name}')" class="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 transition"><i class="fa-solid fa-qrcode mr-1"></i> Bind Phone</button>`;
 
     return `
@@ -295,20 +304,18 @@ function renderKioskTicker(logs) {
   }).join('');
 }
 
-// --- ONE-TIME DEVICE ACTIVATION MODAL (SYNCHRONOUS & RELIABLE) ---
+// --- ONE-TIME DEVICE ACTIVATION MODAL ---
 function openBindModal(userId, userName) {
+  activeBindingUserId = userId;
   document.getElementById('bind-modal-emp-name').textContent = userName;
   document.getElementById('bind-device-modal').classList.remove('hidden');
 
-  // Generate activation code synchronously on client
   const activationCode = 'ACT-' + Math.random().toString(36).substring(2, 10).toUpperCase();
   const origin = window.location.origin;
   const bindUrl = `${origin}/bind.html?key=${activationCode}&uid=${userId}&name=${encodeURIComponent(userName)}`;
 
-  // Display URL in input for manual copying
   document.getElementById('bind-url-input').value = bindUrl;
 
-  // Render QR Code immediately
   const qrContainer = document.getElementById('bind-qrcode');
   qrContainer.innerHTML = '';
   try {
@@ -323,13 +330,12 @@ function openBindModal(userId, userName) {
   } catch (err) {
     console.error("QR render error", err);
   }
+}
 
-  // Sync activation code to server in background
-  fetch('/api/devices/generate-activation', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId, userName, activationCode })
-  }).catch(e => {});
+function handleRebindClick(userId, userName) {
+  if (confirm(`A phone is already bound to "${userName}".\n\nDo you want to reset and generate a new QR code to link a new phone?`)) {
+    openBindModal(userId, userName);
+  }
 }
 
 function copyBindUrl() {
@@ -340,8 +346,20 @@ function copyBindUrl() {
 }
 
 function closeBindModal() {
+  // Update local binding state to Phone Linked
+  if (activeBindingUserId) {
+    const emp = localEmployees.find(e => e.id === activeBindingUserId);
+    if (emp) {
+      emp.isDeviceBound = true;
+      emp.deviceToken = emp.deviceToken || `DEV-${activeBindingUserId}`;
+      localStorage.setItem('smartattend_employees', JSON.stringify(localEmployees));
+    }
+  }
+
   document.getElementById('bind-device-modal').classList.add('hidden');
+  activeBindingUserId = null;
   fetchAdminData();
+  showToast('Binding Complete', 'Phone binding registered. Employee can now scan reception kiosk.');
 }
 
 // --- TIMESHEET MODAL ---

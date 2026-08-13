@@ -23,7 +23,7 @@
     <!-- Loading State -->
     <div id="loading-state" class="py-12 text-center space-y-3">
       <i class="fa-solid fa-circle-notch fa-spin text-3xl text-emerald-400"></i>
-      <p class="text-xs text-slate-400">Authenticating Registered Device...</p>
+      <p class="text-xs text-slate-400 font-mono">Authenticating Bound Phone...</p>
     </div>
 
     <!-- Bound Employee Verification Card (NO DROPDOWN) -->
@@ -36,7 +36,7 @@
           </div>
           <div>
             <h2 class="text-base font-black text-white" id="emp-name">Employee Name</h2>
-            <p class="text-xs text-slate-400" id="emp-dept">Engineering Department</p>
+            <p class="text-xs text-slate-400" id="emp-dept">Registered Department</p>
           </div>
         </div>
         <div id="emp-status-badge" class="px-3 py-1 bg-slate-800 text-slate-300 text-[10px] font-bold rounded-full border border-slate-700">
@@ -57,13 +57,13 @@
       </div>
 
       <!-- 1-Tap Punch Button -->
-      <button onclick="submitOneTapPunch()" id="punch-action-btn" class="w-full py-4.5 bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-black text-base rounded-2xl shadow-xl shadow-emerald-500/20 hover:opacity-95 active:scale-[0.98] transition flex items-center justify-center space-x-2">
+      <button onclick="submitOneTapPunch()" id="punch-action-btn" class="w-full py-4 bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-black text-base rounded-2xl shadow-xl shadow-emerald-500/20 hover:opacity-95 active:scale-[0.98] transition flex items-center justify-center space-x-2">
         <i class="fa-solid fa-fingerprint text-lg"></i>
         <span id="punch-btn-label">CONFIRM CLOCK IN</span>
       </button>
 
       <div class="text-center text-[11px] text-slate-500">
-        🔒 Device Verified: <span class="text-emerald-400">1-Phone Identity Lock Active</span>
+        🔒 Device Locked: <span class="text-emerald-400">1-Phone Identity Verified</span>
       </div>
     </div>
 
@@ -77,9 +77,9 @@
         <p class="text-xs text-emerald-300 font-mono mt-1" id="success-time-str">09:02:15 AM</p>
       </div>
       <div class="text-xs text-slate-300 bg-slate-950 p-3 rounded-xl border border-slate-800 font-mono">
-        Today's Total Work Time: <strong id="success-hours-str" class="text-emerald-400">8h 28m 05s</strong>
+        Today's Total Duration: <strong id="success-hours-str" class="text-emerald-400">0h 0m 0s</strong>
       </div>
-      <p class="text-[11px] text-slate-400">Reception screen and HR dashboard updated in real-time.</p>
+      <p class="text-[11px] text-slate-400">Reception lobby screen & admin portal updated live.</p>
     </div>
 
     <!-- Unregistered Device Warning -->
@@ -89,14 +89,11 @@
       </div>
       <div>
         <h3 class="text-base font-black text-white">Unregistered Device</h3>
-        <p class="text-xs text-rose-300 mt-1">This phone is not linked to any employee account.</p>
+        <p class="text-xs text-rose-300 mt-1">This phone has not been bound to an employee profile yet.</p>
       </div>
       <div class="text-[11px] text-slate-400 bg-slate-950 p-3.5 rounded-xl border border-slate-800 text-left space-y-1">
-        <div><strong>Why am I seeing this?</strong></div>
-        <div>To prevent proxy attendance and mistakes, each phone must be activated by Admin once.</div>
-      </div>
-      <div class="text-xs text-slate-400">
-        Please ask your Admin or HR manager to show you your <strong>"Bind Device QR"</strong> from the Admin Dashboard.
+        <div><strong>To link this phone:</strong></div>
+        <div>Ask your Admin to click <strong class="text-amber-400">"Bind Phone"</strong> on the Admin Dashboard and scan your personal activation QR code once.</div>
       </div>
     </div>
 
@@ -105,13 +102,16 @@
   <script>
     let kioskToken = '';
     let deviceToken = '';
-    let currentEmployee = null;
+    let employeeId = '';
+    let employeeName = '';
 
     document.addEventListener('DOMContentLoaded', async () => {
       const urlParams = new URLSearchParams(window.location.search);
       kioskToken = urlParams.get('token') || urlParams.get('t') || '';
 
       deviceToken = localStorage.getItem('smartattend_device_token');
+      employeeId = localStorage.getItem('smartattend_employee_id');
+      employeeName = localStorage.getItem('smartattend_employee_name');
 
       if (!deviceToken) {
         document.getElementById('loading-state').classList.add('hidden');
@@ -124,21 +124,43 @@
         const res = await fetch('/api/devices/verify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ deviceToken })
+          body: JSON.stringify({
+            deviceToken,
+            fallbackUserId: employeeId,
+            fallbackUserName: employeeName
+          })
         });
 
         const data = await res.json();
         document.getElementById('loading-state').classList.add('hidden');
 
         if (data.bound && data.employee) {
-          currentEmployee = data.employee;
           renderEmployeeView(data.employee);
+        } else if (employeeName) {
+          // Fallback to locally stored identity
+          renderEmployeeView({
+            name: employeeName,
+            department: 'General',
+            status: 'OUT',
+            todayFirstIn: '--',
+            hoursToday: '0h 0m 0s'
+          });
         } else {
           document.getElementById('unregistered-device-box').classList.remove('hidden');
         }
       } catch (e) {
         document.getElementById('loading-state').classList.add('hidden');
-        document.getElementById('unregistered-device-box').classList.remove('hidden');
+        if (employeeName) {
+          renderEmployeeView({
+            name: employeeName,
+            department: 'General',
+            status: 'OUT',
+            todayFirstIn: '--',
+            hoursToday: '0h 0m 0s'
+          });
+        } else {
+          document.getElementById('unregistered-device-box').classList.remove('hidden');
+        }
       }
     });
 
@@ -168,7 +190,7 @@
     async function submitOneTapPunch() {
       const btn = document.getElementById('punch-action-btn');
       btn.disabled = true;
-      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processing Punch...';
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Recording Punch...';
 
       try {
         const res = await fetch('/api/attendance/punch', {
@@ -177,6 +199,8 @@
           body: JSON.stringify({
             deviceToken,
             kioskToken,
+            userId: employeeId,
+            userName: employeeName,
             method: 'DEVICE_SCAN'
           })
         });
@@ -186,15 +210,15 @@
           document.getElementById('authorized-card').classList.add('hidden');
           document.getElementById('punch-success-box').classList.remove('hidden');
           document.getElementById('success-action-title').textContent = data.message;
-          document.getElementById('success-time-str').textContent = `Punch Time: ${data.time}`;
+          document.getElementById('success-time-str').textContent = `Time: ${data.time}`;
           document.getElementById('success-hours-str').textContent = data.totalHoursToday;
         } else {
-          alert('Error: ' + data.message);
+          alert('Punch Error: ' + data.message);
           btn.disabled = false;
           btn.innerHTML = '<i class="fa-solid fa-fingerprint text-lg mr-2"></i> CONFIRM PUNCH';
         }
       } catch (err) {
-        alert('Network Error. Please retry.');
+        alert('Network Error. Please try again.');
         btn.disabled = false;
         btn.innerHTML = '<i class="fa-solid fa-fingerprint text-lg mr-2"></i> CONFIRM PUNCH';
       }
