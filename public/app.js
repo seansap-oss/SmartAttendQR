@@ -5,7 +5,8 @@ let badgeQRCodeObj = null;
 let currentKioskToken = '';
 let kioskTimerInterval = null;
 let liveClockInterval = null;
-let punchMode = 'AUTO'; // 'AUTO', 'IN', 'OUT'
+let qrMode = 'DIRECT_WEB'; // 'DIRECT_WEB' (opens live Vercel web check-in) or 'WHATSAPP'
+let punchMode = 'AUTO';
 
 // LocalStorage Persistent Stores
 let localUsers = JSON.parse(localStorage.getItem('smartattend_users') || '[]');
@@ -20,7 +21,6 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchAdminData();
   setInterval(fetchAdminData, 4000);
 
-  // Sync initial bot phone input
   if (configuredBotPhone) {
     const input = document.getElementById('kiosk-bot-phone-input');
     if (input) input.value = configuredBotPhone;
@@ -44,15 +44,15 @@ function showToast(title, message, isError = false) {
   if (isError) {
     icon.className = "w-9 h-9 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center text-lg";
     icon.innerHTML = '<i class="fa-solid fa-triangle-exclamation"></i>';
-    toast.className = "fixed top-5 right-5 z-50 transform translate-y-0 opacity-100 bg-slate-900 border border-rose-500/50 shadow-2xl rounded-2xl p-4 flex items-center space-x-3 max-w-sm pointer-events-auto transition-all";
   } else {
     icon.className = "w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-lg";
     icon.innerHTML = '<i class="fa-solid fa-check"></i>';
-    toast.className = "fixed top-5 right-5 z-50 transform translate-y-0 opacity-100 bg-slate-900 border border-emerald-500/50 shadow-2xl rounded-2xl p-4 flex items-center space-x-3 max-w-sm pointer-events-auto transition-all";
   }
 
+  toast.className = "fixed top-5 right-5 z-50 transform translate-y-0 opacity-100 bg-slate-900 border border-slate-700 shadow-2xl rounded-2xl p-4 flex items-center space-x-3 max-w-sm pointer-events-auto transition-all";
+
   setTimeout(() => {
-    toast.className = "fixed top-5 right-5 z-50 transform translate-y-[-150%] opacity-0 bg-slate-900 border border-emerald-500/50 shadow-2xl rounded-2xl p-4 flex items-center space-x-3 max-w-sm pointer-events-none transition-all";
+    toast.className = "fixed top-5 right-5 z-50 transform translate-y-[-150%] opacity-0 bg-slate-900 border border-slate-700 shadow-2xl rounded-2xl p-4 flex items-center space-x-3 max-w-sm pointer-events-none transition-all";
   }, 3500);
 }
 
@@ -77,17 +77,18 @@ function switchTab(tabName) {
   }
 }
 
-function setPunchMode(mode) {
-  punchMode = mode;
-  ['AUTO', 'IN', 'OUT'].forEach(m => {
-    const btn = document.getElementById(`btn-mode-${m.toLowerCase()}`);
-    if (m === mode) {
-      btn.className = "px-3 py-1 text-xs font-bold rounded-lg text-emerald-400 bg-slate-800 border border-emerald-500/30";
-    } else {
-      btn.className = "px-3 py-1 text-xs font-medium text-slate-400 hover:text-white rounded-lg";
-    }
-  });
+function setQRTargetMode(mode) {
+  qrMode = mode;
+  document.getElementById('btn-qr-web').className = mode === 'DIRECT_WEB'
+    ? "px-3 py-1.5 text-xs font-bold rounded-lg text-emerald-400 bg-slate-800 border border-emerald-500/30"
+    : "px-3 py-1.5 text-xs font-medium text-slate-400 hover:text-white rounded-lg";
+  document.getElementById('btn-qr-whatsapp').className = mode === 'WHATSAPP'
+    ? "px-3 py-1.5 text-xs font-bold rounded-lg text-emerald-400 bg-slate-800 border border-emerald-500/30"
+    : "px-3 py-1.5 text-xs font-medium text-slate-400 hover:text-white rounded-lg";
+
+  if (kioskQRCodeObj) kioskQRCodeObj = null;
   updateKioskToken();
+  showToast('QR Mode Changed', mode === 'DIRECT_WEB' ? 'QR now opens Mobile Check-In Webpage directly' : 'QR now opens WhatsApp Chat pre-filled');
 }
 
 // --- SYNC LOCAL STORAGE TO SERVER ---
@@ -103,9 +104,7 @@ async function syncLocalDataToServer() {
           initialLogs: localLogs
         })
       });
-    } catch (e) {
-      console.warn("Could not sync local cache to server", e);
-    }
+    } catch (e) {}
   }
 }
 
@@ -117,7 +116,7 @@ function initLiveClock() {
 
 function updateClock() {
   const now = new Date();
-  const timeStr = now.toLocaleTimeString('en-US', { hour12: true });
+  const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
   const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric' });
   const clockEl = document.getElementById('live-clock');
   const dateEl = document.getElementById('live-date');
@@ -147,15 +146,21 @@ async function updateKioskToken() {
     const percent = (data.secondsRemaining / 30) * 100;
     document.getElementById('kiosk-timer-bar').style.width = `${percent}%`;
 
-    // Render QR Code pointing to WhatsApp
     const qrContainer = document.getElementById('kiosk-qrcode');
     if (qrContainer) {
       const activeBotNumber = configuredBotPhone || data.botPhone || '61400000000';
       const cleanPhone = activeBotNumber.replace(/[^0-9]/g, '');
+      const origin = window.location.origin;
 
-      // Mode prefix
-      const modePrefix = punchMode === 'IN' ? 'IN' : punchMode === 'OUT' ? 'OUT' : 'ATTEND';
-      const qrTargetUrl = `https://wa.me/${cleanPhone}?text=${modePrefix}-${data.token}`;
+      let qrTargetUrl = '';
+      if (qrMode === 'DIRECT_WEB') {
+        // Direct Link to Live Vercel Mobile Check-In page
+        qrTargetUrl = `${origin}/scan.html?token=${data.token}`;
+      } else {
+        // WhatsApp with human-readable structured message
+        const messageText = `Clock-in Verification [Code: ${data.token}] - SmartAttend Reception`;
+        qrTargetUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(messageText)}`;
+      }
 
       if (!kioskQRCodeObj) {
         qrContainer.innerHTML = '';
@@ -178,7 +183,7 @@ async function updateKioskToken() {
 }
 
 // --- SAVE WHATSAPP BOT PHONE NUMBER ---
-async function saveBotPhoneSetting(source = 'kiosk') {
+async function saveBotPhoneSetting() {
   const input = document.getElementById('kiosk-bot-phone-input');
   const phone = input.value.trim().replace(/[^0-9]/g, '');
 
@@ -199,20 +204,17 @@ async function saveBotPhoneSetting(source = 'kiosk') {
     body: JSON.stringify({ botPhone: phone })
   });
 
-  if (kioskQRCodeObj) {
-    kioskQRCodeObj = null; // Recreate QR with new number
-  }
+  if (kioskQRCodeObj) kioskQRCodeObj = null;
   updateKioskToken();
-  showToast('Number Saved!', `WhatsApp Business Number updated to +${phone}. Scans will now open your chat.`);
+  showToast('Number Saved!', `WhatsApp Business Number updated to +${phone}.`);
 }
 
-// --- FETCH ADMIN DATA & UPDATE TABLE ---
+// --- FETCH ADMIN DATA ---
 async function fetchAdminData() {
   try {
     const res = await fetch('/api/admin/data');
     const data = await res.json();
 
-    // Merge server users with local persistent store if server restarted
     if (data.users && data.users.length > 0) {
       localUsers = data.users;
       localStorage.setItem('smartattend_users', JSON.stringify(localUsers));
@@ -225,7 +227,6 @@ async function fetchAdminData() {
     const displayUsers = data.users && data.users.length > 0 ? data.users : localUsers;
     const displayLogs = data.logs && data.logs.length > 0 ? data.logs : localLogs;
 
-    // Update KPIs
     const checkedInCount = displayUsers.filter(u => u.status === 'IN').length;
     document.getElementById('kpi-total-emp').textContent = displayUsers.length;
     document.getElementById('kpi-checked-in').textContent = checkedInCount;
@@ -235,7 +236,6 @@ async function fetchAdminData() {
       document.getElementById('kpi-bot-status').textContent = `+${configuredBotPhone}`;
     }
 
-    // Render Tables & Feeds
     renderAdminRoster(displayUsers);
     renderAdminLogs(displayLogs);
     renderKioskTicker(displayLogs);
@@ -353,7 +353,7 @@ function renderKioskTicker(logs) {
           <div>
             <div class="text-sm font-bold text-white">${log.userName}</div>
             <div class="text-[10px] text-emerald-400 flex items-center gap-1 mt-0.5">
-              <i class="fa-brands fa-whatsapp"></i> WhatsApp Verified
+              <i class="fa-solid fa-check-circle"></i> Logged Successfully
             </div>
           </div>
         </div>
@@ -366,7 +366,7 @@ function renderKioskTicker(logs) {
   }).join('');
 }
 
-// --- EMPLOYEE TIMESHEET DETAIL MODAL ---
+// --- TIMESHEET MODAL ---
 function openTimesheetModal(userId) {
   const user = localUsers.find(u => u.id === userId);
   if (!user) return;
@@ -379,7 +379,6 @@ function openTimesheetModal(userId) {
   document.getElementById('detail-weekly-hours').textContent = user.hoursWeekly || '0h 0m 0s';
   document.getElementById('detail-monthly-hours').textContent = user.hoursMonthly || '0h 0m 0s';
 
-  // Render Punch History
   const historyContainer = document.getElementById('detail-punch-history');
   const userPunches = localLogs.filter(l => l.userId === userId);
 
@@ -404,7 +403,6 @@ function openTimesheetModal(userId) {
     }).join('');
   }
 
-  // Set Delete button action
   const deleteBtn = document.getElementById('detail-delete-btn');
   deleteBtn.onclick = () => deleteEmployee(userId, user.name);
 
@@ -434,7 +432,7 @@ async function deleteEmployee(userId, userName) {
   showToast('Employee Deleted', `"${userName}" has been removed.`);
 }
 
-// --- ADD USER FORM (BUG FIX: Reset & Validation) ---
+// --- ADD USER FORM ---
 function openAddUserModal() {
   document.getElementById('add-user-modal').classList.remove('hidden');
 }
@@ -450,7 +448,7 @@ async function handleAddUserSubmit(e) {
   const department = document.getElementById('new-dept').value.trim();
 
   if (!name || !phone) {
-    showToast('Missing Fields', 'Please provide a name and WhatsApp phone number', true);
+    showToast('Missing Fields', 'Please provide a name and phone number', true);
     return;
   }
 
@@ -484,7 +482,7 @@ async function handleAddUserSubmit(e) {
   showToast('Employee Registered', `"${name}" (+${phone}) registered successfully.`);
 }
 
-// --- MANUAL PUNCH MODAL ---
+// --- MANUAL PUNCH ---
 function openManualPunchModal() {
   populateManualUserSelect(localUsers);
   document.getElementById('manual-punch-modal').classList.remove('hidden');

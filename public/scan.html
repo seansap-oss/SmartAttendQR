@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mobile Check-In - SmartAttend</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans flex items-center justify-center p-4">
+
+  <div class="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
+    <!-- Header -->
+    <div class="flex items-center space-x-3 pb-4 border-b border-slate-800">
+      <div class="w-11 h-11 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center text-xl font-bold">
+        <i class="fa-solid fa-qrcode"></i>
+      </div>
+      <div>
+        <h2 class="text-lg font-black text-white">SmartAttend Reception</h2>
+        <p class="text-xs text-slate-400">Mobile Attendance Terminal</p>
+      </div>
+    </div>
+
+    <!-- Scan Verification Box -->
+    <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 flex items-center justify-between font-mono text-xs">
+      <span class="text-slate-400">Security Token:</span>
+      <span id="scan-token-display" class="text-emerald-400 font-bold tracking-widest text-sm">VERIFYING</span>
+    </div>
+
+    <!-- User Selection / Phone Input -->
+    <form id="mobile-punch-form" onsubmit="handleDirectPunch(event)" class="space-y-4 text-xs">
+      <div>
+        <label class="block text-slate-300 font-semibold mb-1.5">Select Your Employee Profile:</label>
+        <select id="mobile-user-select" class="w-full bg-slate-950 border border-slate-700 text-white p-3.5 rounded-xl text-xs sm:text-sm focus:outline-none focus:border-emerald-500"></select>
+      </div>
+
+      <!-- Action Button -->
+      <button type="submit" id="punch-btn" class="w-full py-4 bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-black text-sm rounded-2xl shadow-xl shadow-emerald-500/20 hover:opacity-95 transition flex items-center justify-center space-x-2">
+        <i class="fa-solid fa-fingerprint text-base"></i>
+        <span id="punch-btn-text">CONFIRM ATTENDANCE PUNCH</span>
+      </button>
+    </form>
+
+    <!-- Success Confirmation Card -->
+    <div id="punch-success-card" class="hidden bg-emerald-950/60 border border-emerald-500/40 p-5 rounded-2xl space-y-3">
+      <div class="flex items-center space-x-2.5 text-emerald-400 font-bold text-sm">
+        <i class="fa-solid fa-circle-check text-base"></i>
+        <span id="success-headline">Attendance Logged Successfully!</span>
+      </div>
+      <div class="text-xs text-emerald-200 font-mono space-y-1">
+        <div>Employee: <strong id="success-name" class="text-white">--</strong></div>
+        <div>Time: <strong id="success-time" class="text-white">--</strong></div>
+        <div>Total Duration Today: <strong id="success-hours" class="text-white">--</strong></div>
+      </div>
+      <div class="pt-2 border-t border-emerald-500/20 text-[11px] text-emerald-300">
+        ✅ Real-time dashboard and reception screen updated instantly.
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentToken = '';
+    let usersList = [];
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      currentToken = urlParams.get('token') || urlParams.get('t') || '';
+      document.getElementById('scan-token-display').textContent = currentToken || 'EXPIRED';
+
+      // Load registered users
+      try {
+        const res = await fetch('/api/admin/data');
+        const data = await res.json();
+        usersList = data.users || [];
+        const select = document.getElementById('mobile-user-select');
+        if (usersList.length === 0) {
+          select.innerHTML = '<option value="">No registered employees found. Please register on Admin Dashboard.</option>';
+        } else {
+          select.innerHTML = usersList.map(u => `
+            <option value="${u.id}">${u.name} (+${u.phone}) - Current: ${u.status === 'IN' ? 'Clocked IN' : 'Clocked OUT'}</option>
+          `).join('');
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    });
+
+    async function handleDirectPunch(e) {
+      e.preventDefault();
+      const userId = document.getElementById('mobile-user-select').value;
+      if (!userId) {
+        alert('Please select your employee name.');
+        return;
+      }
+
+      const btn = document.getElementById('punch-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processing...';
+
+      try {
+        const res = await fetch('/api/attendance/scan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId, token: currentToken, method: 'MOBILE_DIRECT' })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+          document.getElementById('mobile-punch-form').classList.add('hidden');
+          document.getElementById('punch-success-card').classList.remove('hidden');
+          document.getElementById('success-headline').textContent = data.message;
+          document.getElementById('success-name').textContent = data.userName;
+          document.getElementById('success-time').textContent = data.time;
+          document.getElementById('success-hours').textContent = data.totalHoursToday || 'Active Shift';
+        } else {
+          alert('Error: ' + data.message);
+          btn.disabled = false;
+          btn.innerHTML = 'CONFIRM ATTENDANCE PUNCH';
+        }
+      } catch (err) {
+        alert('Network Error. Please retry.');
+        btn.disabled = false;
+        btn.innerHTML = 'CONFIRM ATTENDANCE PUNCH';
+      }
+    }
+  </script>
+</body>
+</html>
