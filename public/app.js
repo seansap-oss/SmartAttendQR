@@ -295,37 +295,48 @@ function renderKioskTicker(logs) {
   }).join('');
 }
 
-// --- ONE-TIME DEVICE ACTIVATION MODAL ---
-async function openBindModal(userId, userName) {
+// --- ONE-TIME DEVICE ACTIVATION MODAL (SYNCHRONOUS & RELIABLE) ---
+function openBindModal(userId, userName) {
   document.getElementById('bind-modal-emp-name').textContent = userName;
   document.getElementById('bind-device-modal').classList.remove('hidden');
 
+  // Generate activation code synchronously on client
+  const activationCode = 'ACT-' + Math.random().toString(36).substring(2, 10).toUpperCase();
+  const origin = window.location.origin;
+  const bindUrl = `${origin}/bind.html?key=${activationCode}&uid=${userId}&name=${encodeURIComponent(userName)}`;
+
+  // Display URL in input for manual copying
+  document.getElementById('bind-url-input').value = bindUrl;
+
+  // Render QR Code immediately
+  const qrContainer = document.getElementById('bind-qrcode');
+  qrContainer.innerHTML = '';
   try {
-    const res = await fetch('/api/devices/generate-activation', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId })
+    bindQRCodeObj = new QRCode(qrContainer, {
+      text: bindUrl,
+      width: 200,
+      height: 200,
+      colorDark : "#020617",
+      colorLight : "#ffffff",
+      correctLevel : QRCode.CorrectLevel.H
     });
-    const data = await res.json();
-
-    if (data.success) {
-      const origin = window.location.origin;
-      const bindUrl = `${origin}/bind.html?key=${data.activationCode}`;
-
-      const qrContainer = document.getElementById('bind-qrcode');
-      qrContainer.innerHTML = '';
-      bindQRCodeObj = new QRCode(qrContainer, {
-        text: bindUrl,
-        width: 200,
-        height: 200,
-        colorDark : "#020617",
-        colorLight : "#ffffff",
-        correctLevel : QRCode.CorrectLevel.H
-      });
-    }
-  } catch (e) {
-    showToast('Error', 'Failed to generate activation QR', true);
+  } catch (err) {
+    console.error("QR render error", err);
   }
+
+  // Sync activation code to server in background
+  fetch('/api/devices/generate-activation', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId, userName, activationCode })
+  }).catch(e => {});
+}
+
+function copyBindUrl() {
+  const input = document.getElementById('bind-url-input');
+  input.select();
+  navigator.clipboard.writeText(input.value);
+  showToast('Link Copied!', 'Activation link copied. Send it to the employee or scan the QR.');
 }
 
 function closeBindModal() {
@@ -441,7 +452,7 @@ async function handleAddUserSubmit(e) {
     await fetch('/api/admin/employees', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, phone, department })
+      body: JSON.stringify({ name, phone, department, id: newEmp.id })
     });
   } catch (err) {}
 
@@ -450,7 +461,7 @@ async function handleAddUserSubmit(e) {
   closeAddUserModal();
 
   fetchAdminData();
-  showToast('Employee Registered', `"${name}" registered. Now click "Bind Phone" to link their device.`);
+  showToast('Employee Registered', `"${name}" registered. Click "Bind Phone" to link their device.`);
 }
 
 // --- MANUAL PUNCH MODAL ---

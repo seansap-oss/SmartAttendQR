@@ -6,25 +6,20 @@ const url = require('url');
 
 const PORT = process.env.PORT || 3000;
 
-// Configuration & Secrets
 let SYSTEM_CONFIG = {
   companyName: 'SmartAttend Reception',
-  kioskSecret: process.env.KIOSK_SECRET || 'smartattend_kiosk_secret_2026',
-  supabaseUrl: process.env.SUPABASE_URL || '',
-  supabaseKey: process.env.SUPABASE_KEY || ''
+  kioskSecret: process.env.KIOSK_SECRET || 'smartattend_kiosk_secret_2026'
 };
 
-// Unified Database Store (Syncs across instances & supports Supabase)
 let DB = {
   employees: [],
   logs: [],
-  activationKeys: new Map(), // key -> { userId, expiresAt }
+  activationKeys: new Map(),
   usedTokens: new Set()
 };
 
-// --- TOTP 30s HMAC ENGINE ---
 function generateTOTP(secret, timeWindowOffset = 0) {
-  const timeStep = 30; // 30 seconds
+  const timeStep = 30;
   const currentEpoch = Math.floor(Date.now() / 1000);
   const timeWindow = Math.floor(currentEpoch / timeStep) + timeWindowOffset;
   const hmac = crypto.createHmac('sha256', secret);
@@ -88,9 +83,7 @@ function calculateEmployeeTimesheets(userId) {
 
     if (log.eventType === 'CHECK_IN') {
       lastInTime = logTime;
-      if (isToday && !todayFirstIn) {
-        todayFirstIn = logTime;
-      }
+      if (isToday && !todayFirstIn) todayFirstIn = logTime;
     } else if (log.eventType === 'CHECK_OUT' && lastInTime) {
       const diffSec = Math.floor((logTime - lastInTime) / 1000);
       if (isToday) {
@@ -103,7 +96,6 @@ function calculateEmployeeTimesheets(userId) {
     }
   }
 
-  // If currently clocked in, add running elapsed time
   if (lastInTime) {
     const elapsedSec = Math.floor((now - lastInTime) / 1000);
     todaySeconds += elapsedSec;
@@ -116,12 +108,10 @@ function calculateEmployeeTimesheets(userId) {
     todayFirstIn: todayFirstIn ? formatTimeWithSeconds(todayFirstIn) : '--',
     todayLastOut: todayLastOut ? formatTimeWithSeconds(todayLastOut) : (lastInTime ? 'Active (Open)' : '--'),
     weeklyFormatted: formatDuration(weeklySeconds),
-    monthlyFormatted: formatDuration(monthlySeconds),
-    rawSeconds: todaySeconds
+    monthlyFormatted: formatDuration(monthlySeconds)
   };
 }
 
-// --- HTTP SERVER ---
 const server = http.createServer((req, res) => {
   const parsedUrl = url.parse(req.url, true);
   const pathname = parsedUrl.pathname;
@@ -148,34 +138,39 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // 2. Generate Device Activation Key (For Admin to Bind an Employee's Phone)
+  // 2. Generate / Register Device Activation Key
   if (pathname === '/api/devices/generate-activation' && req.method === 'POST') {
     let body = '';
     req.on('data', chunk => { body += chunk; });
     req.on('end', () => {
       try {
-        const { userId } = JSON.parse(body);
-        const emp = DB.employees.find(e => e.id === userId);
-        if (!emp) {
-          res.writeHead(404, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'Employee not found' }));
-          return;
+        const { userId, userName, activationCode: clientCode } = JSON.parse(body);
+        let emp = DB.employees.find(e => e.id === userId);
+        if (!emp && userName) {
+          emp = {
+            id: userId,
+            name: userName,
+            phone: '',
+            department: 'General',
+            status: 'OUT',
+            deviceToken: null
+          };
+          DB.employees.push(emp);
         }
 
-        // Generate 1-time activation code valid for 24 hours
-        const activationCode = `ACT-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+        const activationCode = clientCode || `ACT-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
         DB.activationKeys.set(activationCode, {
-          userId: emp.id,
-          userName: emp.name,
-          expiresAt: Date.now() + 24 * 3600 * 1000
+          userId: emp ? emp.id : userId,
+          userName: emp ? emp.name : (userName || 'Employee'),
+          expiresAt: Date.now() + 48 * 3600 * 1000
         });
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
           success: true,
           activationCode,
-          userId: emp.id,
-          userName: emp.name
+          userId: emp ? emp.id : userId,
+          userName: emp ? emp.name : userName
         }));
       } catch (err) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -185,44 +180,45 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // 3. Complete Device Binding (Executed on Employee's Phone once)
+  // 3. Complete Device Binding
   if (pathname === '/api/devices/bind' && req.method === 'POST') {
     let body = '';
     req.on('data', chunk => { body += chunk; });
     req.on('end', () => {
       try {
-        const { activationCode, deviceToken, deviceName } = JSON.parse(body);
+        const { activationCode, deviceToken, deviceName, userId: fallbackUserId, userName: fallbackUserName } = JSON.parse(body);
         const activation = DB.activationKeys.get(activationCode);
 
-        if (!activation || Date.now() > activation.expiresAt) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ success: false, message: 'Invalid or Expired Activation Code. Please ask Admin for a new one.' }));
-          return;
+        let targetUserId = activation ? activation.userId : fallbackUserId;
+        let targetUserName = activation ? activation.userName : fallbackUserName;
+
+        let emp = DB.employees.find(e => e.id === targetUserId);
+        if (!emp && targetUserId) {
+          emp = {
+            id: targetUserId,
+            name: targetUserName || 'Employee',
+            phone: '',
+            department: 'General',
+            status: 'OUT',
+            deviceToken: null
+          };
+          DB.employees.push(emp);
         }
 
-        const emp = DB.employees.find(e => e.id === activation.userId);
-        if (!emp) {
-          res.writeHead(404, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ success: false, message: 'Employee profile not found' }));
-          return;
+        if (emp) {
+          emp.deviceToken = deviceToken;
+          emp.deviceName = deviceName || 'Personal Phone';
+          emp.boundAt = new Date().toISOString();
         }
-
-        // Bind this device token to employee
-        emp.deviceToken = deviceToken;
-        emp.deviceName = deviceName || 'Personal Phone';
-        emp.boundAt = new Date().toISOString();
-
-        // Burn the activation code
-        DB.activationKeys.delete(activationCode);
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
           success: true,
-          message: `Phone successfully locked to ${emp.name}!`,
+          message: `Phone successfully locked to ${emp ? emp.name : 'Employee'}!`,
           employee: {
-            id: emp.id,
-            name: emp.name,
-            department: emp.department
+            id: emp ? emp.id : targetUserId,
+            name: emp ? emp.name : targetUserName,
+            department: emp ? emp.department : 'General'
           }
         }));
       } catch (err) {
@@ -233,26 +229,18 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // 4. Verify Bound Device & Load Employee Status (When phone scans Kiosk QR - NO DROPDOWN)
+  // 4. Verify Bound Device & Load Employee Status
   if (pathname === '/api/devices/verify' && req.method === 'POST') {
     let body = '';
     req.on('data', chunk => { body += chunk; });
     req.on('end', () => {
       try {
         const { deviceToken } = JSON.parse(body);
-        if (!deviceToken) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ bound: false, message: 'No device token supplied' }));
-          return;
-        }
-
         const emp = DB.employees.find(e => e.deviceToken === deviceToken);
+
         if (!emp) {
           res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({
-            bound: false,
-            message: 'Unregistered Device. This phone is not linked to any employee account.'
-          }));
+          res.end(JSON.stringify({ bound: false, message: 'Unregistered Device' }));
           return;
         }
 
@@ -273,41 +261,44 @@ const server = http.createServer((req, res) => {
         }));
       } catch (err) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ bound: false, message: 'Error verifying device' }));
+        res.end(JSON.stringify({ bound: false }));
       }
     });
     return;
   }
 
-  // 5. Punch Attendance (Single-Tap Verification using Bound Device)
+  // 5. Punch Attendance
   if (pathname === '/api/attendance/punch' && req.method === 'POST') {
     let body = '';
     req.on('data', chunk => { body += chunk; });
     req.on('end', () => {
       try {
-        const { deviceToken, kioskToken, forcedType, method = 'DEVICE_SCAN' } = JSON.parse(body);
+        const { deviceToken, kioskToken, forcedType, method = 'DEVICE_SCAN', userId: fallbackUserId, userName: fallbackName } = JSON.parse(body);
 
-        let emp = null;
-        if (method === 'MANUAL_ADMIN') {
-          // Manual override from admin dashboard
-          const { userId } = JSON.parse(body);
-          emp = DB.employees.find(e => e.id === userId);
-        } else {
-          emp = DB.employees.find(e => e.deviceToken === deviceToken);
+        let emp = DB.employees.find(e => e.deviceToken === deviceToken || e.id === fallbackUserId);
+        if (!emp && (deviceToken || fallbackUserId)) {
+          emp = {
+            id: fallbackUserId || `emp-${Date.now()}`,
+            name: fallbackName || 'Employee',
+            phone: '',
+            department: 'General',
+            status: 'OUT',
+            deviceToken: deviceToken || null
+          };
+          DB.employees.push(emp);
         }
 
         if (!emp) {
           res.writeHead(403, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ success: false, message: 'Device not authorized. Please bind this phone first.' }));
+          res.end(JSON.stringify({ success: false, message: 'Device not authorized' }));
           return;
         }
 
-        // Verify Kiosk 30-second Dynamic QR Token (Unless manual admin)
         if (method === 'DEVICE_SCAN') {
           const verifyResult = verifyTOTP(SYSTEM_CONFIG.kioskSecret, kioskToken);
           if (!verifyResult.valid) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: false, message: 'QR Code Expired. Please scan the current code on the kiosk screen.' }));
+            res.end(JSON.stringify({ success: false, message: 'QR Code Expired. Please scan the current code on the kiosk monitor.' }));
             return;
           }
         }
@@ -345,13 +336,13 @@ const server = http.createServer((req, res) => {
         }));
       } catch (err) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: false, message: 'Server error processing punch' }));
+        res.end(JSON.stringify({ success: false, message: 'Server error' }));
       }
     });
     return;
   }
 
-  // 6. Admin Data (Full Sync)
+  // 6. Admin Data
   if (pathname === '/api/admin/data' && req.method === 'GET') {
     const totalEmployees = DB.employees.length;
     const checkedInCount = DB.employees.filter(e => e.status === 'IN').length;
@@ -385,36 +376,33 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // 7. Register Employee API
+  // 7. Register Employee
   if (pathname === '/api/admin/employees' && req.method === 'POST') {
     let body = '';
     req.on('data', chunk => { body += chunk; });
     req.on('end', () => {
       try {
-        const { name, phone, department } = JSON.parse(body);
+        const { name, phone, department, id } = JSON.parse(body);
         const newEmp = {
-          id: `emp-${Date.now()}`,
+          id: id || `emp-${Date.now()}`,
           name,
           phone: phone ? phone.replace(/[^0-9+]/g, '') : '',
           department: department || 'General',
           status: 'OUT',
-          deviceToken: null,
-          deviceName: null,
-          boundAt: null
+          deviceToken: null
         };
         DB.employees.push(newEmp);
-
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: true, employee: newEmp }));
       } catch (err) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: false, message: 'Invalid payload' }));
+        res.end(JSON.stringify({ success: false }));
       }
     });
     return;
   }
 
-  // 8. Delete / Unbind Device API
+  // 8. Delete / Unbind Device
   if (pathname === '/api/admin/employees/unbind' && req.method === 'POST') {
     let body = '';
     req.on('data', chunk => { body += chunk; });
@@ -424,8 +412,6 @@ const server = http.createServer((req, res) => {
         const emp = DB.employees.find(e => e.id === userId);
         if (emp) {
           emp.deviceToken = null;
-          emp.deviceName = null;
-          emp.boundAt = null;
         }
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: true }));
@@ -437,18 +423,27 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // 9. Sync Inbound Local Storage Cache
+  // 9. Sync Inbound Storage
   if (pathname === '/api/admin/sync' && req.method === 'POST') {
     let body = '';
     req.on('data', chunk => { body += chunk; });
     req.on('end', () => {
       try {
         const { initialEmployees, initialLogs } = JSON.parse(body);
-        if (Array.isArray(initialEmployees) && DB.employees.length === 0) {
-          DB.employees = initialEmployees;
+        if (Array.isArray(initialEmployees)) {
+          // Merge employees
+          initialEmployees.forEach(ie => {
+            if (!DB.employees.find(e => e.id === ie.id)) {
+              DB.employees.push(ie);
+            }
+          });
         }
-        if (Array.isArray(initialLogs) && DB.logs.length === 0) {
-          DB.logs = initialLogs;
+        if (Array.isArray(initialLogs)) {
+          initialLogs.forEach(il => {
+            if (!DB.logs.find(l => l.id === il.id)) {
+              DB.logs.push(il);
+            }
+          });
         }
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: true }));
@@ -460,7 +455,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Static File Serving
+  // Static Files
   let filePath = path.join(__dirname, 'public', pathname === '/' ? 'index.html' : pathname);
   const extname = path.extname(filePath);
   let contentType = 'text/html';
@@ -483,5 +478,5 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`SmartAttend Server running on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });

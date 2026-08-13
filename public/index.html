@@ -79,8 +79,8 @@
           <p class="text-xs text-slate-400 mt-1 mb-6 max-w-sm">QR Code rotates every <strong class="text-emerald-400">30 seconds</strong>. Zero dropdowns, zero proxy punches.</p>
 
           <!-- QR Code Container -->
-          <div class="relative p-6 bg-white rounded-3xl shadow-2xl border-4 border-slate-800 flex flex-col items-center">
-            <div id="kiosk-qrcode" class="p-1"></div>
+          <div class="relative p-5 bg-white rounded-3xl shadow-2xl border-4 border-slate-800 flex flex-col items-center min-w-[240px] min-h-[240px]">
+            <div id="kiosk-qrcode"></div>
             <div class="mt-3 px-4 py-1.5 bg-slate-950 text-emerald-400 font-mono font-bold text-xs sm:text-sm tracking-widest rounded-xl border border-slate-800">
               TOKEN: <span id="kiosk-token-code">CONNECTING</span>
             </div>
@@ -253,7 +253,7 @@
     </div>
   </div>
 
-  <!-- MODAL 2: BIND PHONE ACTIVATION QR -->
+  <!-- MODAL 2: BIND PHONE ACTIVATION QR (FIXED) -->
   <div id="bind-device-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
     <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 w-full max-w-md space-y-5 shadow-2xl text-center">
       <div class="flex justify-between items-center pb-3 border-b border-slate-800">
@@ -262,19 +262,33 @@
       </div>
 
       <div>
-        <h4 class="text-lg font-black text-white" id="bind-modal-emp-name">Sean Sapam</h4>
-        <p class="text-xs text-slate-400 mt-1">Have employee scan this QR code <strong>ONCE</strong> with their personal phone camera to lock their phone.</p>
+        <h4 class="text-lg font-black text-white" id="bind-modal-emp-name">Employee</h4>
+        <p class="text-xs text-slate-400 mt-1">Scan this QR code <strong>ONCE</strong> with the employee's personal smartphone camera.</p>
       </div>
 
-      <div class="bg-white p-5 rounded-3xl inline-block shadow-2xl">
-        <div id="bind-qrcode" class="p-1"></div>
+      <!-- High contrast QR Box with fixed minimum dimensions -->
+      <div class="flex justify-center my-3">
+        <div class="bg-white p-4 rounded-2xl shadow-2xl border-4 border-slate-800 inline-flex items-center justify-center min-w-[220px] min-h-[220px]">
+          <div id="bind-qrcode"></div>
+        </div>
+      </div>
+
+      <!-- Direct Link / Copy Option -->
+      <div class="space-y-1.5 text-left">
+        <label class="text-[11px] text-slate-400 font-semibold">Or share direct activation link:</label>
+        <div class="flex items-center space-x-2">
+          <input type="text" id="bind-url-input" readonly class="w-full bg-slate-950 border border-slate-800 text-emerald-400 font-mono text-[11px] px-3 py-2 rounded-xl select-all">
+          <button onclick="copyBindUrl()" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl shrink-0 border border-slate-700 transition">
+            <i class="fa-solid fa-copy mr-1"></i> Copy
+          </button>
+        </div>
       </div>
 
       <div class="text-[11px] text-slate-400 bg-slate-950 p-3 rounded-xl border border-slate-800">
-        🔒 Once activated, this employee's phone can scan the daily reception kiosk with 1-tap and zero dropdowns.
+        🔒 Once activated, this phone will automatically recognize the employee every morning with zero dropdowns.
       </div>
 
-      <button onclick="closeBindModal()" class="w-full py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl">Done</button>
+      <button onclick="closeBindModal()" class="w-full py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl transition">Done</button>
     </div>
   </div>
 
