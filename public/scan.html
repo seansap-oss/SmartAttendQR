@@ -3,124 +3,200 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Mobile Check-In - SmartAttend</title>
+  <title>SmartAttend - 1-Tap Check In</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    .pulse-green {
+      animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: .4; }
+    }
+  </style>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans flex items-center justify-center p-4">
 
   <div class="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
-    <!-- Header -->
-    <div class="flex items-center space-x-3 pb-4 border-b border-slate-800">
-      <div class="w-11 h-11 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center text-xl font-bold">
-        <i class="fa-solid fa-qrcode"></i>
-      </div>
-      <div>
-        <h2 class="text-lg font-black text-white">SmartAttend Reception</h2>
-        <p class="text-xs text-slate-400">Mobile Attendance Terminal</p>
-      </div>
+
+    <!-- Loading State -->
+    <div id="loading-state" class="py-12 text-center space-y-3">
+      <i class="fa-solid fa-circle-notch fa-spin text-3xl text-emerald-400"></i>
+      <p class="text-xs text-slate-400">Authenticating Registered Device...</p>
     </div>
 
-    <!-- Scan Verification Box -->
-    <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 flex items-center justify-between font-mono text-xs">
-      <span class="text-slate-400">Security Token:</span>
-      <span id="scan-token-display" class="text-emerald-400 font-bold tracking-widest text-sm">VERIFYING</span>
-    </div>
-
-    <!-- User Selection / Phone Input -->
-    <form id="mobile-punch-form" onsubmit="handleDirectPunch(event)" class="space-y-4 text-xs">
-      <div>
-        <label class="block text-slate-300 font-semibold mb-1.5">Select Your Employee Profile:</label>
-        <select id="mobile-user-select" class="w-full bg-slate-950 border border-slate-700 text-white p-3.5 rounded-xl text-xs sm:text-sm focus:outline-none focus:border-emerald-500"></select>
+    <!-- Bound Employee Verification Card (NO DROPDOWN) -->
+    <div id="authorized-card" class="hidden space-y-6">
+      <!-- Profile Header -->
+      <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+        <div class="flex items-center space-x-3.5">
+          <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 text-slate-950 flex items-center justify-center text-xl font-black" id="emp-avatar">
+            S
+          </div>
+          <div>
+            <h2 class="text-base font-black text-white" id="emp-name">Employee Name</h2>
+            <p class="text-xs text-slate-400" id="emp-dept">Engineering Department</p>
+          </div>
+        </div>
+        <div id="emp-status-badge" class="px-3 py-1 bg-slate-800 text-slate-300 text-[10px] font-bold rounded-full border border-slate-700">
+          ● Clocked Out
+        </div>
       </div>
 
-      <!-- Action Button -->
-      <button type="submit" id="punch-btn" class="w-full py-4 bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-black text-sm rounded-2xl shadow-xl shadow-emerald-500/20 hover:opacity-95 transition flex items-center justify-center space-x-2">
-        <i class="fa-solid fa-fingerprint text-base"></i>
-        <span id="punch-btn-text">CONFIRM ATTENDANCE PUNCH</span>
+      <!-- Today's Timesheet Summary -->
+      <div class="grid grid-cols-2 gap-3 text-xs font-mono">
+        <div class="bg-slate-950 p-3.5 rounded-2xl border border-slate-800">
+          <div class="text-slate-500 text-[10px]">First Clock-In</div>
+          <div id="emp-clock-in" class="text-slate-200 font-bold mt-1">--</div>
+        </div>
+        <div class="bg-slate-950 p-3.5 rounded-2xl border border-slate-800">
+          <div class="text-slate-500 text-[10px]">Today's Duration</div>
+          <div id="emp-hours-today" class="text-emerald-400 font-bold mt-1">0h 0m 0s</div>
+        </div>
+      </div>
+
+      <!-- 1-Tap Punch Button -->
+      <button onclick="submitOneTapPunch()" id="punch-action-btn" class="w-full py-4.5 bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-black text-base rounded-2xl shadow-xl shadow-emerald-500/20 hover:opacity-95 active:scale-[0.98] transition flex items-center justify-center space-x-2">
+        <i class="fa-solid fa-fingerprint text-lg"></i>
+        <span id="punch-btn-label">CONFIRM CLOCK IN</span>
       </button>
-    </form>
 
-    <!-- Success Confirmation Card -->
-    <div id="punch-success-card" class="hidden bg-emerald-950/60 border border-emerald-500/40 p-5 rounded-2xl space-y-3">
-      <div class="flex items-center space-x-2.5 text-emerald-400 font-bold text-sm">
-        <i class="fa-solid fa-circle-check text-base"></i>
-        <span id="success-headline">Attendance Logged Successfully!</span>
-      </div>
-      <div class="text-xs text-emerald-200 font-mono space-y-1">
-        <div>Employee: <strong id="success-name" class="text-white">--</strong></div>
-        <div>Time: <strong id="success-time" class="text-white">--</strong></div>
-        <div>Total Duration Today: <strong id="success-hours" class="text-white">--</strong></div>
-      </div>
-      <div class="pt-2 border-t border-emerald-500/20 text-[11px] text-emerald-300">
-        ✅ Real-time dashboard and reception screen updated instantly.
+      <div class="text-center text-[11px] text-slate-500">
+        🔒 Device Verified: <span class="text-emerald-400">1-Phone Identity Lock Active</span>
       </div>
     </div>
+
+    <!-- Success Confirmation -->
+    <div id="punch-success-box" class="hidden bg-emerald-950/60 border border-emerald-500/40 p-6 rounded-2xl space-y-3.5 text-center">
+      <div class="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-2xl mx-auto">
+        <i class="fa-solid fa-check"></i>
+      </div>
+      <div>
+        <h3 class="text-base font-black text-white" id="success-action-title">Punch Recorded!</h3>
+        <p class="text-xs text-emerald-300 font-mono mt-1" id="success-time-str">09:02:15 AM</p>
+      </div>
+      <div class="text-xs text-slate-300 bg-slate-950 p-3 rounded-xl border border-slate-800 font-mono">
+        Today's Total Work Time: <strong id="success-hours-str" class="text-emerald-400">8h 28m 05s</strong>
+      </div>
+      <p class="text-[11px] text-slate-400">Reception screen and HR dashboard updated in real-time.</p>
+    </div>
+
+    <!-- Unregistered Device Warning -->
+    <div id="unregistered-device-box" class="hidden bg-rose-950/60 border border-rose-500/40 p-6 rounded-2xl space-y-4 text-center">
+      <div class="w-12 h-12 rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center text-2xl mx-auto">
+        <i class="fa-solid fa-shield-halved"></i>
+      </div>
+      <div>
+        <h3 class="text-base font-black text-white">Unregistered Device</h3>
+        <p class="text-xs text-rose-300 mt-1">This phone is not linked to any employee account.</p>
+      </div>
+      <div class="text-[11px] text-slate-400 bg-slate-950 p-3.5 rounded-xl border border-slate-800 text-left space-y-1">
+        <div><strong>Why am I seeing this?</strong></div>
+        <div>To prevent proxy attendance and mistakes, each phone must be activated by Admin once.</div>
+      </div>
+      <div class="text-xs text-slate-400">
+        Please ask your Admin or HR manager to show you your <strong>"Bind Device QR"</strong> from the Admin Dashboard.
+      </div>
+    </div>
+
   </div>
 
   <script>
-    let currentToken = '';
-    let usersList = [];
+    let kioskToken = '';
+    let deviceToken = '';
+    let currentEmployee = null;
 
     document.addEventListener('DOMContentLoaded', async () => {
       const urlParams = new URLSearchParams(window.location.search);
-      currentToken = urlParams.get('token') || urlParams.get('t') || '';
-      document.getElementById('scan-token-display').textContent = currentToken || 'EXPIRED';
+      kioskToken = urlParams.get('token') || urlParams.get('t') || '';
 
-      // Load registered users
-      try {
-        const res = await fetch('/api/admin/data');
-        const data = await res.json();
-        usersList = data.users || [];
-        const select = document.getElementById('mobile-user-select');
-        if (usersList.length === 0) {
-          select.innerHTML = '<option value="">No registered employees found. Please register on Admin Dashboard.</option>';
-        } else {
-          select.innerHTML = usersList.map(u => `
-            <option value="${u.id}">${u.name} (+${u.phone}) - Current: ${u.status === 'IN' ? 'Clocked IN' : 'Clocked OUT'}</option>
-          `).join('');
-        }
-      } catch (e) {
-        console.error(e);
-      }
-    });
+      deviceToken = localStorage.getItem('smartattend_device_token');
 
-    async function handleDirectPunch(e) {
-      e.preventDefault();
-      const userId = document.getElementById('mobile-user-select').value;
-      if (!userId) {
-        alert('Please select your employee name.');
+      if (!deviceToken) {
+        document.getElementById('loading-state').classList.add('hidden');
+        document.getElementById('unregistered-device-box').classList.remove('hidden');
         return;
       }
 
-      const btn = document.getElementById('punch-btn');
-      btn.disabled = true;
-      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processing...';
-
+      // Verify bound device with server
       try {
-        const res = await fetch('/api/attendance/scan', {
+        const res = await fetch('/api/devices/verify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId, token: currentToken, method: 'MOBILE_DIRECT' })
+          body: JSON.stringify({ deviceToken })
         });
-        const data = await res.json();
 
+        const data = await res.json();
+        document.getElementById('loading-state').classList.add('hidden');
+
+        if (data.bound && data.employee) {
+          currentEmployee = data.employee;
+          renderEmployeeView(data.employee);
+        } else {
+          document.getElementById('unregistered-device-box').classList.remove('hidden');
+        }
+      } catch (e) {
+        document.getElementById('loading-state').classList.add('hidden');
+        document.getElementById('unregistered-device-box').classList.remove('hidden');
+      }
+    });
+
+    function renderEmployeeView(emp) {
+      document.getElementById('authorized-card').classList.remove('hidden');
+      document.getElementById('emp-name').textContent = emp.name;
+      document.getElementById('emp-dept').textContent = emp.department || 'General';
+      document.getElementById('emp-avatar').textContent = emp.name.charAt(0);
+
+      const isIn = emp.status === 'IN';
+      const badge = document.getElementById('emp-status-badge');
+      if (isIn) {
+        badge.className = "px-3 py-1 bg-emerald-500/10 text-emerald-400 text-[10px] font-bold rounded-full border border-emerald-500/20";
+        badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1.5 pulse-green inline-block"></span> Clocked In';
+      } else {
+        badge.className = "px-3 py-1 bg-slate-800 text-slate-400 text-[10px] font-bold rounded-full border border-slate-700";
+        badge.innerHTML = '● Clocked Out';
+      }
+
+      document.getElementById('emp-clock-in').textContent = emp.todayFirstIn || '--';
+      document.getElementById('emp-hours-today').textContent = emp.hoursToday || '0h 0m 0s';
+
+      const btnLabel = document.getElementById('punch-btn-label');
+      btnLabel.textContent = isIn ? 'CONFIRM CLOCK OUT' : 'CONFIRM CLOCK IN';
+    }
+
+    async function submitOneTapPunch() {
+      const btn = document.getElementById('punch-action-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processing Punch...';
+
+      try {
+        const res = await fetch('/api/attendance/punch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            deviceToken,
+            kioskToken,
+            method: 'DEVICE_SCAN'
+          })
+        });
+
+        const data = await res.json();
         if (data.success) {
-          document.getElementById('mobile-punch-form').classList.add('hidden');
-          document.getElementById('punch-success-card').classList.remove('hidden');
-          document.getElementById('success-headline').textContent = data.message;
-          document.getElementById('success-name').textContent = data.userName;
-          document.getElementById('success-time').textContent = data.time;
-          document.getElementById('success-hours').textContent = data.totalHoursToday || 'Active Shift';
+          document.getElementById('authorized-card').classList.add('hidden');
+          document.getElementById('punch-success-box').classList.remove('hidden');
+          document.getElementById('success-action-title').textContent = data.message;
+          document.getElementById('success-time-str').textContent = `Punch Time: ${data.time}`;
+          document.getElementById('success-hours-str').textContent = data.totalHoursToday;
         } else {
           alert('Error: ' + data.message);
           btn.disabled = false;
-          btn.innerHTML = 'CONFIRM ATTENDANCE PUNCH';
+          btn.innerHTML = '<i class="fa-solid fa-fingerprint text-lg mr-2"></i> CONFIRM PUNCH';
         }
       } catch (err) {
         alert('Network Error. Please retry.');
         btn.disabled = false;
-        btn.innerHTML = 'CONFIRM ATTENDANCE PUNCH';
+        btn.innerHTML = '<i class="fa-solid fa-fingerprint text-lg mr-2"></i> CONFIRM PUNCH';
       }
     }
   </script>

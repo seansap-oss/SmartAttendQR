@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SmartAttend SaaS - WhatsApp & Dynamic QR Attendance System</title>
+  <title>SmartAttend SaaS - 1-Phone Dynamic Attendance Platform</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -33,7 +33,7 @@
     </div>
   </div>
 
-  <!-- TOP NAVIGATION BAR -->
+  <!-- TOP HEADER -->
   <header class="bg-slate-900/90 border-b border-slate-800 sticky top-0 z-40 backdrop-blur-md">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <div class="flex items-center justify-between h-16">
@@ -43,26 +43,18 @@
           </div>
           <div>
             <span class="text-lg font-bold text-white tracking-wide">SmartAttend<span class="text-emerald-400">SaaS</span></span>
-            <span class="block text-[11px] text-slate-400">WhatsApp & Dynamic QR Attendance Platform</span>
+            <span class="block text-[11px] text-slate-400">1-Phone Verified Dynamic Attendance System</span>
           </div>
         </div>
 
         <nav class="flex space-x-1 sm:space-x-2 bg-slate-950/80 p-1.5 rounded-xl border border-slate-800">
-          <button onclick="switchTab('kiosk')" id="tab-kiosk" class="px-3 py-1.5 text-xs sm:text-sm font-semibold rounded-lg transition-all flex items-center space-x-2 text-emerald-400 bg-slate-800/90 shadow-sm border border-emerald-500/30">
+          <button onclick="switchTab('kiosk')" id="tab-kiosk" class="px-3.5 py-1.5 text-xs sm:text-sm font-semibold rounded-lg transition-all flex items-center space-x-2 text-emerald-400 bg-slate-800/90 shadow-sm border border-emerald-500/30">
             <i class="fa-solid fa-desktop text-emerald-400"></i>
             <span>Reception Kiosk</span>
           </button>
-          <button onclick="switchTab('dashboard')" id="tab-dashboard" class="px-3 py-1.5 text-xs sm:text-sm font-medium text-slate-400 hover:text-white rounded-lg transition-all flex items-center space-x-2">
+          <button onclick="switchTab('dashboard')" id="tab-dashboard" class="px-3.5 py-1.5 text-xs sm:text-sm font-medium text-slate-400 hover:text-white rounded-lg transition-all flex items-center space-x-2">
             <i class="fa-solid fa-chart-line text-blue-400"></i>
             <span>Admin Dashboard</span>
-          </button>
-          <button onclick="switchTab('mobile')" id="tab-mobile" class="px-3 py-1.5 text-xs sm:text-sm font-medium text-slate-400 hover:text-white rounded-lg transition-all flex items-center space-x-2">
-            <i class="fa-brands fa-whatsapp text-emerald-500"></i>
-            <span>WhatsApp Simulator</span>
-          </button>
-          <button onclick="switchTab('badge')" id="tab-badge" class="px-3 py-1.5 text-xs sm:text-sm font-medium text-slate-400 hover:text-white rounded-lg transition-all flex items-center space-x-2">
-            <i class="fa-solid fa-id-card text-purple-400"></i>
-            <span>Offline Badge</span>
           </button>
         </nav>
       </div>
@@ -72,37 +64,21 @@
   <!-- MAIN CONTAINER -->
   <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
 
-    <!-- PAGE 1: RECEPTION KIOSK DISPLAY SCREEN -->
+    <!-- PAGE 1: RECEPTION KIOSK SCREEN -->
     <section id="view-kiosk" class="space-y-6">
-      <!-- QR Action Type Selector Banner -->
-      <div class="bg-gradient-to-r from-slate-900 to-slate-900/80 p-4 sm:p-5 rounded-2xl border border-slate-800 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h4 class="text-sm font-bold text-white flex items-center gap-2">
-            <span>Choose How Phone Camera Interacts When Scanned:</span>
-          </h4>
-          <p class="text-xs text-slate-400 mt-0.5">Select Direct Web Check-In (instant connection to Vercel) or WhatsApp Bot mode.</p>
-        </div>
-
-        <!-- Mode Toggle -->
-        <div class="flex items-center space-x-2 bg-slate-950 p-1.5 rounded-xl border border-slate-800">
-          <button onclick="setQRTargetMode('DIRECT_WEB')" id="btn-qr-web" class="px-3 py-1.5 text-xs font-bold rounded-lg text-emerald-400 bg-slate-800 border border-emerald-500/30">
-            <i class="fa-solid fa-mobile-screen-button mr-1"></i> Direct Web Check-In (Recommended)
-          </button>
-          <button onclick="setQRTargetMode('WHATSAPP')" id="btn-qr-whatsapp" class="px-3 py-1.5 text-xs font-medium text-slate-400 hover:text-white rounded-lg">
-            <i class="fa-brands fa-whatsapp text-emerald-400 mr-1"></i> WhatsApp Message
-          </button>
-        </div>
-      </div>
-
       <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <!-- 30-Second Dynamic QR Card -->
+        <!-- Dynamic 30s Kiosk QR Card -->
         <div class="lg:col-span-7 bg-slate-900/90 rounded-3xl p-6 sm:p-8 border border-slate-800 shadow-2xl flex flex-col items-center justify-center text-center relative overflow-hidden">
           <div class="absolute -top-24 -left-24 w-52 h-52 bg-emerald-500/10 rounded-full blur-3xl"></div>
 
-          <h3 class="text-xl sm:text-2xl font-black text-white tracking-tight">Scan with Phone Camera to Punch Attendance</h3>
-          <p class="text-xs text-slate-400 mt-1 mb-6 max-w-sm">QR Code refreshes every <strong class="text-emerald-400">30 seconds</strong>. Photos and screenshots expire automatically.</p>
+          <div class="inline-flex items-center px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold rounded-full mb-3">
+            <i class="fa-solid fa-shield-check mr-1.5"></i> 1-Phone Device Binding Active
+          </div>
 
-          <!-- QR Container -->
+          <h3 class="text-2xl sm:text-3xl font-black text-white tracking-tight">Scan with Your Registered Phone</h3>
+          <p class="text-xs text-slate-400 mt-1 mb-6 max-w-sm">QR Code rotates every <strong class="text-emerald-400">30 seconds</strong>. Zero dropdowns, zero proxy punches.</p>
+
+          <!-- QR Code Container -->
           <div class="relative p-6 bg-white rounded-3xl shadow-2xl border-4 border-slate-800 flex flex-col items-center">
             <div id="kiosk-qrcode" class="p-1"></div>
             <div class="mt-3 px-4 py-1.5 bg-slate-950 text-emerald-400 font-mono font-bold text-xs sm:text-sm tracking-widest rounded-xl border border-slate-800">
@@ -110,10 +86,10 @@
             </div>
           </div>
 
-          <!-- 30-Second Countdown Bar -->
+          <!-- Countdown Timer -->
           <div class="w-full max-w-xs mt-6 space-y-1.5">
             <div class="flex justify-between text-xs font-semibold text-slate-400">
-              <span>Next QR Code In:</span>
+              <span>Token Rotation:</span>
               <span id="kiosk-seconds" class="text-emerald-400 font-mono font-bold">30s</span>
             </div>
             <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
@@ -122,18 +98,18 @@
           </div>
         </div>
 
-        <!-- Live Scan Activity Ticker Card -->
+        <!-- Live Reception Feed Card -->
         <div class="lg:col-span-5 bg-slate-900/90 rounded-3xl p-6 sm:p-7 border border-slate-800 shadow-2xl flex flex-col justify-between">
           <div>
             <div class="flex items-center justify-between pb-4 border-b border-slate-800">
               <h3 class="text-base font-bold text-white flex items-center space-x-2">
                 <i class="fa-solid fa-bolt text-amber-400"></i>
-                <span>Live Reception Activity Feed</span>
+                <span>Live Reception Activity</span>
               </h3>
               <span class="text-[11px] px-2.5 py-1 bg-slate-800 text-slate-300 rounded-lg">Instant Sync</span>
             </div>
 
-            <div id="kiosk-ticker-list" class="mt-4 space-y-3 max-h-[360px] overflow-y-auto pr-1"></div>
+            <div id="kiosk-ticker-list" class="mt-4 space-y-3 max-h-[380px] overflow-y-auto pr-1"></div>
           </div>
 
           <div class="mt-4 pt-4 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400 font-mono">
@@ -144,17 +120,17 @@
       </div>
     </section>
 
-    <!-- PAGE 2: ADMIN & HR MANAGEMENT DASHBOARD -->
+    <!-- PAGE 2: ADMIN & HR DASHBOARD -->
     <section id="view-dashboard" class="hidden space-y-6">
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 class="text-2xl font-black text-white tracking-tight">Admin & HR Attendance Portal</h2>
-          <p class="text-xs text-slate-400 mt-0.5">Live employee status, timestamps with seconds, shift hours, and timesheet analytics</p>
+          <p class="text-xs text-slate-400 mt-0.5">Manage employees, bind mobile devices, view punch timestamps with seconds, and payroll timesheets</p>
         </div>
         <div class="flex items-center space-x-3">
           <button onclick="openManualPunchModal()" class="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl border border-slate-700 transition flex items-center space-x-2">
             <i class="fa-solid fa-user-clock text-amber-400"></i>
-            <span>Manual Clock In/Out</span>
+            <span>Manual Punch</span>
           </button>
           <button onclick="openAddUserModal()" class="px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-bold text-xs rounded-xl shadow-lg shadow-emerald-500/20 hover:opacity-95 transition flex items-center space-x-2">
             <i class="fa-solid fa-user-plus"></i>
@@ -191,26 +167,26 @@
 
         <div class="bg-slate-900 p-5 rounded-2xl border border-slate-800 shadow">
           <div class="flex items-center justify-between text-slate-400 text-xs font-medium">
-            <span>WhatsApp Target</span>
-            <i class="fa-brands fa-whatsapp text-emerald-400 text-base"></i>
+            <span>Bound Phones</span>
+            <i class="fa-solid fa-mobile-screen-button text-emerald-400 text-base"></i>
           </div>
-          <div id="kpi-bot-status" class="text-sm font-bold text-emerald-400 mt-3 font-mono truncate">Configured</div>
+          <div id="kpi-bound-devices" class="text-2xl font-bold text-emerald-400 mt-2">0</div>
         </div>
       </div>
 
-      <!-- Main Registered Employees Table -->
+      <!-- Employees Status & Device Binding Table -->
       <div class="bg-slate-900 rounded-3xl p-6 border border-slate-800 shadow-xl">
         <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-slate-800 mb-4 gap-3">
           <div>
             <h3 class="text-lg font-bold text-white flex items-center gap-2">
               <i class="fa-solid fa-id-badge text-emerald-400"></i>
-              <span>Registered Employees & Live Shift Status</span>
+              <span>Registered Employees & Device Binding</span>
             </h3>
-            <p class="text-xs text-slate-400 mt-0.5">Click any employee row to open their full Daily, Weekly & Monthly timesheet</p>
+            <p class="text-xs text-slate-400 mt-0.5">Click "Bind Phone" to link an employee's personal device, or click a row for their full timesheet</p>
           </div>
           <div class="flex items-center space-x-2">
             <span class="text-xs text-slate-400">Search:</span>
-            <input type="text" id="employee-search-input" oninput="handleEmployeeSearch()" placeholder="Name or phone..." class="bg-slate-950 border border-slate-800 text-xs text-slate-200 px-3 py-1.5 rounded-xl w-44 focus:outline-none focus:border-emerald-500">
+            <input type="text" id="employee-search-input" oninput="handleEmployeeSearch()" placeholder="Name or dept..." class="bg-slate-950 border border-slate-800 text-xs text-slate-200 px-3 py-1.5 rounded-xl w-44 focus:outline-none focus:border-emerald-500">
           </div>
         </div>
 
@@ -220,6 +196,7 @@
               <tr>
                 <th class="px-4 py-3 rounded-l-xl">EMPLOYEE</th>
                 <th class="px-4 py-3">DEPARTMENT</th>
+                <th class="px-4 py-3">DEVICE BINDING</th>
                 <th class="px-4 py-3">STATUS</th>
                 <th class="px-4 py-3">CLOCK-IN</th>
                 <th class="px-4 py-3">CLOCK-OUT</th>
@@ -237,79 +214,11 @@
         <div class="flex items-center justify-between pb-4 border-b border-slate-800 mb-4">
           <h3 class="text-base font-bold text-white flex items-center gap-2">
             <i class="fa-solid fa-clock-rotate-left text-blue-400"></i>
-            <span>Timestamp Audit Logs (Hours, Minutes, Seconds)</span>
+            <span>Timestamp Audit Trail (Hours, Minutes, Seconds)</span>
           </h3>
           <button onclick="clearLogsAudit()" class="text-xs text-rose-400 hover:underline">Clear Logs</button>
         </div>
         <div id="admin-logs-list" class="space-y-2.5 max-h-[300px] overflow-y-auto pr-1"></div>
-      </div>
-    </section>
-
-    <!-- PAGE 3: WHATSAPP SIMULATOR -->
-    <section id="view-mobile" class="hidden max-w-2xl mx-auto space-y-6">
-      <div class="bg-slate-900 p-6 sm:p-8 rounded-3xl border border-slate-800 shadow-2xl">
-        <div class="flex items-center space-x-3 mb-4 pb-4 border-b border-slate-800">
-          <div class="w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center text-2xl">
-            <i class="fa-brands fa-whatsapp"></i>
-          </div>
-          <div>
-            <h3 class="text-lg font-bold text-white">WhatsApp Webhook Inbound Simulator</h3>
-            <p class="text-xs text-slate-400">Test how attendance punches trigger automated WhatsApp replies</p>
-          </div>
-        </div>
-
-        <form onsubmit="handleMobileScanSubmit(event)" class="space-y-4">
-          <div>
-            <label class="block text-xs font-semibold text-slate-300 mb-1.5">Select Registered Employee:</label>
-            <select id="sim-user-select" class="w-full bg-slate-950 border border-slate-700 text-white text-xs sm:text-sm rounded-xl px-4 py-3 focus:outline-none focus:border-emerald-500"></select>
-          </div>
-          <div>
-            <div class="flex justify-between items-center mb-1.5">
-              <label class="block text-xs font-semibold text-slate-300">Active Kiosk Token:</label>
-              <button type="button" onclick="syncKioskTokenToForm()" class="text-xs text-emerald-400 hover:underline"><i class="fa-solid fa-rotate mr-1"></i> Sync Token</button>
-            </div>
-            <input type="text" id="sim-token-input" required class="w-full bg-slate-950 border border-slate-700 text-emerald-400 font-mono font-bold text-lg rounded-xl px-4 py-3 focus:outline-none focus:border-emerald-500">
-          </div>
-          <button type="submit" class="w-full py-3.5 bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-bold rounded-xl text-xs sm:text-sm shadow-lg shadow-emerald-500/20 hover:opacity-95 transition">
-            Simulate Inbound WhatsApp Punch
-          </button>
-        </form>
-
-        <div id="sim-response-box" class="hidden mt-6 bg-slate-950 p-4 rounded-2xl border border-slate-800">
-          <div class="text-xs font-semibold text-emerald-400 mb-2 flex items-center gap-1.5">
-            <i class="fa-brands fa-whatsapp"></i>
-            <span>WhatsApp Automated Confirmation Message:</span>
-          </div>
-          <div id="sim-whatsapp-bubble" class="bg-emerald-950/50 border border-emerald-500/30 p-3.5 rounded-2xl text-xs sm:text-sm text-emerald-200 font-mono whitespace-pre-line leading-relaxed"></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- PAGE 4: OFFLINE BADGE -->
-    <section id="view-badge" class="hidden max-w-lg mx-auto space-y-6 text-center">
-      <div class="bg-slate-900 p-8 rounded-3xl border border-slate-800 shadow-2xl space-y-6">
-        <div>
-          <span class="px-3 py-1 bg-purple-500/10 text-purple-400 text-xs font-semibold rounded-full border border-purple-500/20">
-            Offline Kiosk Camera Mode
-          </span>
-          <h2 class="text-2xl font-bold text-white mt-2">Employee Digital ID Badge</h2>
-          <p class="text-xs text-slate-400 mt-1">If employee has no mobile internet package, hold this QR badge to the kiosk camera.</p>
-        </div>
-
-        <select id="badge-user-select" onchange="renderEmployeeBadge()" class="w-full bg-slate-950 border border-slate-700 text-white text-xs sm:text-sm rounded-xl px-4 py-3"></select>
-
-        <div class="bg-white p-6 rounded-3xl inline-block shadow-2xl">
-          <div id="badge-qrcode" class="p-1"></div>
-        </div>
-
-        <div class="text-xs text-slate-400 bg-slate-950 p-4 rounded-2xl border border-slate-800 text-left font-mono space-y-1">
-          <div>Employee ID: <strong id="badge-emp-id" class="text-purple-300">--</strong></div>
-          <div>Phone: <strong id="badge-emp-phone" class="text-slate-200">--</strong></div>
-        </div>
-
-        <button onclick="simulateReverseScan()" class="w-full py-3.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold rounded-xl text-xs sm:text-sm shadow-lg shadow-purple-500/20 hover:opacity-95 transition">
-          Simulate Kiosk Camera Scan
-        </button>
       </div>
     </section>
 
@@ -326,12 +235,11 @@
       <form id="add-user-form" onsubmit="handleAddUserSubmit(event)" class="space-y-4 text-xs">
         <div>
           <label class="block text-slate-300 font-medium mb-1">Full Name:</label>
-          <input type="text" id="new-name" required placeholder="e.g. Alex Johnson" class="w-full bg-slate-950 border border-slate-700 text-white p-3 rounded-xl focus:outline-none focus:border-emerald-500">
+          <input type="text" id="new-name" required placeholder="e.g. Sean Sapam" class="w-full bg-slate-950 border border-slate-700 text-white p-3 rounded-xl focus:outline-none focus:border-emerald-500">
         </div>
         <div>
-          <label class="block text-slate-300 font-medium mb-1">WhatsApp Phone Number (with Country Code):</label>
-          <input type="text" id="new-phone" required placeholder="e.g. 61412345678" class="w-full bg-slate-950 border border-slate-700 text-white p-3 rounded-xl focus:outline-none focus:border-emerald-500">
-          <span class="text-[10px] text-slate-400 mt-1 block">Include country code (e.g. 61 for Australia, 1 for USA, 91 for India).</span>
+          <label class="block text-slate-300 font-medium mb-1">Phone Number (Optional):</label>
+          <input type="text" id="new-phone" placeholder="e.g. 61412345678" class="w-full bg-slate-950 border border-slate-700 text-white p-3 rounded-xl focus:outline-none focus:border-emerald-500">
         </div>
         <div>
           <label class="block text-slate-300 font-medium mb-1">Department:</label>
@@ -345,17 +253,42 @@
     </div>
   </div>
 
-  <!-- MODAL 2: EMPLOYEE TIMESHEET DETAILS -->
+  <!-- MODAL 2: BIND PHONE ACTIVATION QR -->
+  <div id="bind-device-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 w-full max-w-md space-y-5 shadow-2xl text-center">
+      <div class="flex justify-between items-center pb-3 border-b border-slate-800">
+        <h3 class="text-base font-bold text-white text-left">Bind Personal Smartphone</h3>
+        <button onclick="closeBindModal()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+      </div>
+
+      <div>
+        <h4 class="text-lg font-black text-white" id="bind-modal-emp-name">Sean Sapam</h4>
+        <p class="text-xs text-slate-400 mt-1">Have employee scan this QR code <strong>ONCE</strong> with their personal phone camera to lock their phone.</p>
+      </div>
+
+      <div class="bg-white p-5 rounded-3xl inline-block shadow-2xl">
+        <div id="bind-qrcode" class="p-1"></div>
+      </div>
+
+      <div class="text-[11px] text-slate-400 bg-slate-950 p-3 rounded-xl border border-slate-800">
+        🔒 Once activated, this employee's phone can scan the daily reception kiosk with 1-tap and zero dropdowns.
+      </div>
+
+      <button onclick="closeBindModal()" class="w-full py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl">Done</button>
+    </div>
+  </div>
+
+  <!-- MODAL 3: EMPLOYEE TIMESHEET DRAWER -->
   <div id="timesheet-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
     <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-2xl space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
       <div class="flex justify-between items-center pb-3 border-b border-slate-800">
         <div class="flex items-center space-x-3">
           <div class="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-lg font-bold" id="detail-avatar">
-            A
+            S
           </div>
           <div>
             <h3 class="text-base font-bold text-white" id="detail-name">Employee Name</h3>
-            <p class="text-xs text-slate-400 font-mono" id="detail-phone">+61412345678</p>
+            <p class="text-xs text-slate-400" id="detail-phone">Department</p>
           </div>
         </div>
         <button onclick="closeTimesheetModal()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
@@ -382,15 +315,15 @@
       </div>
 
       <div class="flex justify-between items-center pt-3 border-t border-slate-800">
-        <button id="detail-delete-btn" class="px-4 py-2 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 text-xs font-bold rounded-xl border border-rose-500/30 transition">
-          <i class="fa-solid fa-trash mr-1.5"></i> Delete Employee
+        <button id="detail-unbind-btn" class="px-4 py-2 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 text-xs font-bold rounded-xl border border-amber-500/30 transition">
+          <i class="fa-solid fa-link-slash mr-1.5"></i> Reset Bound Phone
         </button>
         <button onclick="closeTimesheetModal()" class="px-5 py-2 bg-slate-800 text-white text-xs font-bold rounded-xl">Close</button>
       </div>
     </div>
   </div>
 
-  <!-- MODAL 3: MANUAL PUNCH -->
+  <!-- MODAL 4: MANUAL PUNCH -->
   <div id="manual-punch-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
     <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-md space-y-5 shadow-2xl">
       <div class="flex justify-between items-center pb-3 border-b border-slate-800">

@@ -1,17 +1,14 @@
 // --- GLOBAL STATE & PERSISTENCE ---
 let currentActiveTab = 'kiosk';
 let kioskQRCodeObj = null;
-let badgeQRCodeObj = null;
+let bindQRCodeObj = null;
 let currentKioskToken = '';
 let kioskTimerInterval = null;
 let liveClockInterval = null;
-let qrMode = 'DIRECT_WEB'; // 'DIRECT_WEB' (opens live Vercel web check-in) or 'WHATSAPP'
-let punchMode = 'AUTO';
 
 // LocalStorage Persistent Stores
-let localUsers = JSON.parse(localStorage.getItem('smartattend_users') || '[]');
+let localEmployees = JSON.parse(localStorage.getItem('smartattend_employees') || '[]');
 let localLogs = JSON.parse(localStorage.getItem('smartattend_logs') || '[]');
-let configuredBotPhone = localStorage.getItem('smartattend_bot_phone') || '';
 
 // --- INIT APP ---
 document.addEventListener('DOMContentLoaded', () => {
@@ -20,18 +17,9 @@ document.addEventListener('DOMContentLoaded', () => {
   syncLocalDataToServer();
   fetchAdminData();
   setInterval(fetchAdminData, 4000);
-
-  if (configuredBotPhone) {
-    const input = document.getElementById('kiosk-bot-phone-input');
-    if (input) input.value = configuredBotPhone;
-    const badge = document.getElementById('active-bot-badge');
-    if (badge) badge.textContent = `+${configuredBotPhone}`;
-    const kpiBot = document.getElementById('kpi-bot-status');
-    if (kpiBot) kpiBot.textContent = `+${configuredBotPhone}`;
-  }
 });
 
-// --- TOAST NOTIFICATIONS ---
+// --- TOAST NOTIFICATION ---
 function showToast(title, message, isError = false) {
   const toast = document.getElementById('toast-notification');
   const icon = document.getElementById('toast-icon');
@@ -59,48 +47,28 @@ function showToast(title, message, isError = false) {
 // --- TAB SWITCHER ---
 function switchTab(tabName) {
   currentActiveTab = tabName;
-  ['kiosk', 'dashboard', 'mobile', 'badge'].forEach(t => {
+  ['kiosk', 'dashboard'].forEach(t => {
     const viewEl = document.getElementById(`view-${t}`);
     const tabBtn = document.getElementById(`tab-${t}`);
     if (t === tabName) {
       viewEl.classList.remove('hidden');
-      tabBtn.className = "px-3 py-1.5 text-xs sm:text-sm font-semibold rounded-lg transition-all flex items-center space-x-2 text-emerald-400 bg-slate-800 shadow-sm border border-emerald-500/30";
+      tabBtn.className = "px-3.5 py-1.5 text-xs sm:text-sm font-semibold rounded-lg transition-all flex items-center space-x-2 text-emerald-400 bg-slate-800/90 shadow-sm border border-emerald-500/30";
     } else {
       viewEl.classList.add('hidden');
-      tabBtn.className = "px-3 py-1.5 text-xs sm:text-sm font-medium text-slate-400 hover:text-white rounded-lg transition-all flex items-center space-x-2";
+      tabBtn.className = "px-3.5 py-1.5 text-xs sm:text-sm font-medium text-slate-400 hover:text-white rounded-lg transition-all flex items-center space-x-2";
     }
   });
-
-  if (tabName === 'badge') {
-    populateBadgeSelect();
-    renderEmployeeBadge();
-  }
-}
-
-function setQRTargetMode(mode) {
-  qrMode = mode;
-  document.getElementById('btn-qr-web').className = mode === 'DIRECT_WEB'
-    ? "px-3 py-1.5 text-xs font-bold rounded-lg text-emerald-400 bg-slate-800 border border-emerald-500/30"
-    : "px-3 py-1.5 text-xs font-medium text-slate-400 hover:text-white rounded-lg";
-  document.getElementById('btn-qr-whatsapp').className = mode === 'WHATSAPP'
-    ? "px-3 py-1.5 text-xs font-bold rounded-lg text-emerald-400 bg-slate-800 border border-emerald-500/30"
-    : "px-3 py-1.5 text-xs font-medium text-slate-400 hover:text-white rounded-lg";
-
-  if (kioskQRCodeObj) kioskQRCodeObj = null;
-  updateKioskToken();
-  showToast('QR Mode Changed', mode === 'DIRECT_WEB' ? 'QR now opens Mobile Check-In Webpage directly' : 'QR now opens WhatsApp Chat pre-filled');
 }
 
 // --- SYNC LOCAL STORAGE TO SERVER ---
 async function syncLocalDataToServer() {
-  if (localUsers.length > 0 || configuredBotPhone) {
+  if (localEmployees.length > 0 || localLogs.length > 0) {
     try {
-      await fetch('/api/admin/config', {
+      await fetch('/api/admin/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          botPhone: configuredBotPhone,
-          initialUsers: localUsers,
+          initialEmployees: localEmployees,
           initialLogs: localLogs
         })
       });
@@ -108,7 +76,7 @@ async function syncLocalDataToServer() {
   }
 }
 
-// --- CLOCK & KIOSK TOTP LOOP ---
+// --- CLOCK & KIOSK 30s TOTP LOOP ---
 function initLiveClock() {
   updateClock();
   liveClockInterval = setInterval(updateClock, 1000);
@@ -135,11 +103,6 @@ async function updateKioskToken() {
     const data = await res.json();
 
     currentKioskToken = data.token;
-    if (data.botPhone && !configuredBotPhone) {
-      configuredBotPhone = data.botPhone;
-      localStorage.setItem('smartattend_bot_phone', configuredBotPhone);
-    }
-
     document.getElementById('kiosk-token-code').textContent = data.token;
     document.getElementById('kiosk-seconds').textContent = `${data.secondsRemaining}s`;
 
@@ -148,26 +111,15 @@ async function updateKioskToken() {
 
     const qrContainer = document.getElementById('kiosk-qrcode');
     if (qrContainer) {
-      const activeBotNumber = configuredBotPhone || data.botPhone || '61400000000';
-      const cleanPhone = activeBotNumber.replace(/[^0-9]/g, '');
       const origin = window.location.origin;
-
-      let qrTargetUrl = '';
-      if (qrMode === 'DIRECT_WEB') {
-        // Direct Link to Live Vercel Mobile Check-In page
-        qrTargetUrl = `${origin}/scan.html?token=${data.token}`;
-      } else {
-        // WhatsApp with human-readable structured message
-        const messageText = `Clock-in Verification [Code: ${data.token}] - SmartAttend Reception`;
-        qrTargetUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(messageText)}`;
-      }
+      const qrTargetUrl = `${origin}/scan.html?token=${data.token}`;
 
       if (!kioskQRCodeObj) {
         qrContainer.innerHTML = '';
         kioskQRCodeObj = new QRCode(qrContainer, {
           text: qrTargetUrl,
-          width: 210,
-          height: 210,
+          width: 220,
+          height: 220,
           colorDark : "#020617",
           colorLight : "#ffffff",
           correctLevel : QRCode.CorrectLevel.H
@@ -182,103 +134,80 @@ async function updateKioskToken() {
   }
 }
 
-// --- SAVE WHATSAPP BOT PHONE NUMBER ---
-async function saveBotPhoneSetting() {
-  const input = document.getElementById('kiosk-bot-phone-input');
-  const phone = input.value.trim().replace(/[^0-9]/g, '');
-
-  if (!phone || phone.length < 7) {
-    showToast('Invalid Phone', 'Please enter a valid WhatsApp phone number with country code (e.g. 61412345678)', true);
-    return;
-  }
-
-  configuredBotPhone = phone;
-  localStorage.setItem('smartattend_bot_phone', phone);
-
-  document.getElementById('active-bot-badge').textContent = `+${phone}`;
-  document.getElementById('kpi-bot-status').textContent = `+${phone}`;
-
-  await fetch('/api/admin/config', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ botPhone: phone })
-  });
-
-  if (kioskQRCodeObj) kioskQRCodeObj = null;
-  updateKioskToken();
-  showToast('Number Saved!', `WhatsApp Business Number updated to +${phone}.`);
-}
-
-// --- FETCH ADMIN DATA ---
+// --- FETCH ADMIN DATA & UPDATE ROSTER ---
 async function fetchAdminData() {
   try {
     const res = await fetch('/api/admin/data');
     const data = await res.json();
 
-    if (data.users && data.users.length > 0) {
-      localUsers = data.users;
-      localStorage.setItem('smartattend_users', JSON.stringify(localUsers));
+    if (data.employees && data.employees.length > 0) {
+      localEmployees = data.employees;
+      localStorage.setItem('smartattend_employees', JSON.stringify(localEmployees));
     }
     if (data.logs && data.logs.length > 0) {
       localLogs = data.logs;
       localStorage.setItem('smartattend_logs', JSON.stringify(localLogs));
     }
 
-    const displayUsers = data.users && data.users.length > 0 ? data.users : localUsers;
+    const displayEmployees = data.employees && data.employees.length > 0 ? data.employees : localEmployees;
     const displayLogs = data.logs && data.logs.length > 0 ? data.logs : localLogs;
 
-    const checkedInCount = displayUsers.filter(u => u.status === 'IN').length;
-    document.getElementById('kpi-total-emp').textContent = displayUsers.length;
+    const checkedInCount = displayEmployees.filter(e => e.status === 'IN').length;
+    const boundDevicesCount = displayEmployees.filter(e => e.isDeviceBound || !!e.deviceToken).length;
+
+    document.getElementById('kpi-total-emp').textContent = displayEmployees.length;
     document.getElementById('kpi-checked-in').textContent = checkedInCount;
-    document.getElementById('kpi-checked-out').textContent = displayUsers.length - checkedInCount;
+    document.getElementById('kpi-checked-out').textContent = displayEmployees.length - checkedInCount;
+    document.getElementById('kpi-bound-devices').textContent = `${boundDevicesCount} / ${displayEmployees.length}`;
 
-    if (configuredBotPhone) {
-      document.getElementById('kpi-bot-status').textContent = `+${configuredBotPhone}`;
-    }
-
-    renderAdminRoster(displayUsers);
+    renderAdminRoster(displayEmployees);
     renderAdminLogs(displayLogs);
     renderKioskTicker(displayLogs);
-    populateSimUserSelect(displayUsers);
-    populateManualUserSelect(displayUsers);
+    populateManualUserSelect(displayEmployees);
   } catch (e) {
     console.error("Error fetching admin data", e);
   }
 }
 
-function renderAdminRoster(users) {
+function renderAdminRoster(employees) {
   const tbody = document.getElementById('admin-user-tbody');
   if (!tbody) return;
 
-  if (users.length === 0) {
+  if (employees.length === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="7" class="px-4 py-8 text-center text-xs text-slate-500">
-          No employees registered yet. Click <strong class="text-emerald-400">"Register Employee"</strong> above to add your first team member.
+        <td colspan="8" class="px-4 py-8 text-center text-xs text-slate-500">
+          No employees registered yet. Click <strong class="text-emerald-400">"Register Employee"</strong> above to add your team.
         </td>
       </tr>
     `;
     return;
   }
 
-  tbody.innerHTML = users.map(u => {
-    const isIn = u.status === 'IN';
-    const clockInVal = u.clockIn || '--';
-    const clockOutVal = u.clockOut || (isIn ? '<span class="text-emerald-400 font-semibold animate-pulse">Active (Open)</span>' : '--');
-    const hoursVal = u.hoursToday || '0h 0m 0s';
+  tbody.innerHTML = employees.map(e => {
+    const isIn = e.status === 'IN';
+    const clockInVal = e.clockIn || '--';
+    const clockOutVal = e.clockOut || (isIn ? '<span class="text-emerald-400 font-semibold animate-pulse">Active (Open)</span>' : '--');
+    const hoursVal = e.hoursToday || '0h 0m 0s';
+    const isBound = e.isDeviceBound || !!e.deviceToken;
+
+    const deviceBadge = isBound
+      ? `<span class="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"><i class="fa-solid fa-mobile-screen-button mr-1"></i> Phone Linked</span>`
+      : `<button onclick="openBindModal('${e.id}', '${e.name}')" class="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 transition"><i class="fa-solid fa-qrcode mr-1"></i> Bind Phone</button>`;
 
     return `
-      <tr class="hover:bg-slate-800/40 transition cursor-pointer" onclick="openTimesheetModal('${u.id}')">
+      <tr class="hover:bg-slate-800/40 transition cursor-pointer" onclick="openTimesheetModal('${e.id}')">
         <td class="px-4 py-3.5 font-medium text-white flex items-center space-x-3">
           <div class="w-8 h-8 rounded-xl bg-slate-800 text-slate-300 border border-slate-700 flex items-center justify-center font-bold text-xs">
-            ${u.name.charAt(0)}
+            ${e.name.charAt(0)}
           </div>
           <div>
-            <div class="font-bold text-slate-100">${u.name}</div>
-            <div class="text-[11px] text-slate-400 font-mono">+${u.phone.replace(/[^0-9]/g, '')}</div>
+            <div class="font-bold text-slate-100">${e.name}</div>
+            <div class="text-[11px] text-slate-400 font-mono">${e.phone ? '+' + e.phone.replace(/[^0-9]/g, '') : 'No Phone'}</div>
           </div>
         </td>
-        <td class="px-4 py-3.5 text-slate-300">${u.department || 'General'}</td>
+        <td class="px-4 py-3.5 text-slate-300">${e.department || 'General'}</td>
+        <td class="px-4 py-3.5" onclick="event.stopPropagation()">${deviceBadge}</td>
         <td class="px-4 py-3.5">
           <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold ${isIn ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-800 text-slate-400'}">
             <span class="w-1.5 h-1.5 rounded-full ${isIn ? 'bg-emerald-400 mr-1.5 pulse-green' : 'bg-slate-500 mr-1.5'}"></span>
@@ -289,7 +218,7 @@ function renderAdminRoster(users) {
         <td class="px-4 py-3.5 font-mono text-xs text-slate-300">${clockOutVal}</td>
         <td class="px-4 py-3.5 font-mono font-bold text-xs text-emerald-400">${hoursVal}</td>
         <td class="px-4 py-3.5 text-right space-x-2" onclick="event.stopPropagation()">
-          <button onclick="openTimesheetModal('${u.id}')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold rounded-lg border border-slate-700">
+          <button onclick="openTimesheetModal('${e.id}')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold rounded-lg border border-slate-700">
             <i class="fa-solid fa-chart-simple text-blue-400 mr-1"></i> Timesheet
           </button>
         </td>
@@ -303,7 +232,7 @@ function renderAdminLogs(logs) {
   if (!container) return;
 
   if (logs.length === 0) {
-    container.innerHTML = `<div class="text-xs text-slate-500 py-3 text-center">No attendance logs yet</div>`;
+    container.innerHTML = `<div class="text-xs text-slate-500 py-3 text-center">No attendance logs recorded yet</div>`;
     return;
   }
 
@@ -312,12 +241,12 @@ function renderAdminLogs(logs) {
     const timeFormatted = l.formattedTime || new Date(l.time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
 
     return `
-      <div class="p-3 bg-slate-950/70 rounded-xl border border-slate-800/80 flex items-center justify-between text-xs">
+      <div class="p-3 bg-slate-950/70 rounded-xl border border-slate-800/80 flex items-center justify-between text-xs font-mono">
         <div class="flex items-center space-x-2.5">
           <div class="w-2 h-2 rounded-full ${isIn ? 'bg-emerald-400' : 'bg-rose-400'}"></div>
           <div>
             <span class="font-bold text-slate-200">${l.userName}</span>
-            <span class="text-slate-500 text-[11px] ml-2 font-mono">${timeFormatted}</span>
+            <span class="text-slate-500 text-[11px] ml-2">${timeFormatted}</span>
           </div>
         </div>
         <div>
@@ -352,8 +281,8 @@ function renderKioskTicker(logs) {
           </div>
           <div>
             <div class="text-sm font-bold text-white">${log.userName}</div>
-            <div class="text-[10px] text-emerald-400 flex items-center gap-1 mt-0.5">
-              <i class="fa-solid fa-check-circle"></i> Logged Successfully
+            <div class="text-[10px] text-emerald-400 flex items-center gap-1 mt-0.5 font-mono">
+              <i class="fa-solid fa-mobile-screen-button"></i> Device Verified
             </div>
           </div>
         </div>
@@ -366,18 +295,56 @@ function renderKioskTicker(logs) {
   }).join('');
 }
 
+// --- ONE-TIME DEVICE ACTIVATION MODAL ---
+async function openBindModal(userId, userName) {
+  document.getElementById('bind-modal-emp-name').textContent = userName;
+  document.getElementById('bind-device-modal').classList.remove('hidden');
+
+  try {
+    const res = await fetch('/api/devices/generate-activation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId })
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      const origin = window.location.origin;
+      const bindUrl = `${origin}/bind.html?key=${data.activationCode}`;
+
+      const qrContainer = document.getElementById('bind-qrcode');
+      qrContainer.innerHTML = '';
+      bindQRCodeObj = new QRCode(qrContainer, {
+        text: bindUrl,
+        width: 200,
+        height: 200,
+        colorDark : "#020617",
+        colorLight : "#ffffff",
+        correctLevel : QRCode.CorrectLevel.H
+      });
+    }
+  } catch (e) {
+    showToast('Error', 'Failed to generate activation QR', true);
+  }
+}
+
+function closeBindModal() {
+  document.getElementById('bind-device-modal').classList.add('hidden');
+  fetchAdminData();
+}
+
 // --- TIMESHEET MODAL ---
 function openTimesheetModal(userId) {
-  const user = localUsers.find(u => u.id === userId);
-  if (!user) return;
+  const emp = localEmployees.find(e => e.id === userId);
+  if (!emp) return;
 
-  document.getElementById('detail-name').textContent = user.name;
-  document.getElementById('detail-phone').textContent = `+${user.phone.replace(/[^0-9]/g, '')} • ${user.department || 'General'}`;
-  document.getElementById('detail-avatar').textContent = user.name.charAt(0);
+  document.getElementById('detail-name').textContent = emp.name;
+  document.getElementById('detail-phone').textContent = `${emp.department || 'General'} • ${emp.phone ? '+' + emp.phone.replace(/[^0-9]/g, '') : 'No Phone'}`;
+  document.getElementById('detail-avatar').textContent = emp.name.charAt(0);
 
-  document.getElementById('detail-today-hours').textContent = user.hoursToday || '0h 0m 0s';
-  document.getElementById('detail-weekly-hours').textContent = user.hoursWeekly || '0h 0m 0s';
-  document.getElementById('detail-monthly-hours').textContent = user.hoursMonthly || '0h 0m 0s';
+  document.getElementById('detail-today-hours').textContent = emp.hoursToday || '0h 0m 0s';
+  document.getElementById('detail-weekly-hours').textContent = emp.hoursWeekly || '0h 0m 0s';
+  document.getElementById('detail-monthly-hours').textContent = emp.hoursMonthly || '0h 0m 0s';
 
   const historyContainer = document.getElementById('detail-punch-history');
   const userPunches = localLogs.filter(l => l.userId === userId);
@@ -403,8 +370,8 @@ function openTimesheetModal(userId) {
     }).join('');
   }
 
-  const deleteBtn = document.getElementById('detail-delete-btn');
-  deleteBtn.onclick = () => deleteEmployee(userId, user.name);
+  const unbindBtn = document.getElementById('detail-unbind-btn');
+  unbindBtn.onclick = () => unbindDevice(userId, emp.name);
 
   document.getElementById('timesheet-modal').classList.remove('hidden');
 }
@@ -413,15 +380,17 @@ function closeTimesheetModal() {
   document.getElementById('timesheet-modal').classList.add('hidden');
 }
 
-async function deleteEmployee(userId, userName) {
-  if (!confirm(`Are you sure you want to delete employee "${userName}"?`)) return;
+async function unbindDevice(userId, userName) {
+  if (!confirm(`Reset and unbind phone for "${userName}"? The employee will need to scan a new activation QR.`)) return;
 
-  localUsers = localUsers.filter(u => u.id !== userId);
-  localLogs = localLogs.filter(l => l.userId !== userId);
-  localStorage.setItem('smartattend_users', JSON.stringify(localUsers));
-  localStorage.setItem('smartattend_logs', JSON.stringify(localLogs));
+  const emp = localEmployees.find(e => e.id === userId);
+  if (emp) {
+    emp.deviceToken = null;
+    emp.isDeviceBound = false;
+  }
+  localStorage.setItem('smartattend_employees', JSON.stringify(localEmployees));
 
-  await fetch('/api/admin/users/delete', {
+  await fetch('/api/admin/employees/unbind', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ userId })
@@ -429,10 +398,10 @@ async function deleteEmployee(userId, userName) {
 
   closeTimesheetModal();
   fetchAdminData();
-  showToast('Employee Deleted', `"${userName}" has been removed.`);
+  showToast('Phone Unbound', `Device reset for "${userName}".`);
 }
 
-// --- ADD USER FORM ---
+// --- ADD EMPLOYEE FORM ---
 function openAddUserModal() {
   document.getElementById('add-user-modal').classList.remove('hidden');
 }
@@ -447,27 +416,29 @@ async function handleAddUserSubmit(e) {
   const phone = document.getElementById('new-phone').value.trim().replace(/[^0-9+]/g, '');
   const department = document.getElementById('new-dept').value.trim();
 
-  if (!name || !phone) {
-    showToast('Missing Fields', 'Please provide a name and phone number', true);
+  if (!name) {
+    showToast('Missing Field', 'Please provide employee name', true);
     return;
   }
 
-  const newUser = {
-    id: `usr-${Date.now()}`,
+  const newEmp = {
+    id: `emp-${Date.now()}`,
     name,
     phone,
     department: department || 'General',
     status: 'OUT',
     clockIn: '--',
     clockOut: '--',
-    hoursToday: '0h 0m 0s'
+    hoursToday: '0h 0m 0s',
+    deviceToken: null,
+    isDeviceBound: false
   };
 
-  localUsers.push(newUser);
-  localStorage.setItem('smartattend_users', JSON.stringify(localUsers));
+  localEmployees.push(newEmp);
+  localStorage.setItem('smartattend_employees', JSON.stringify(localEmployees));
 
   try {
-    await fetch('/api/admin/users', {
+    await fetch('/api/admin/employees', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, phone, department })
@@ -479,12 +450,12 @@ async function handleAddUserSubmit(e) {
   closeAddUserModal();
 
   fetchAdminData();
-  showToast('Employee Registered', `"${name}" (+${phone}) registered successfully.`);
+  showToast('Employee Registered', `"${name}" registered. Now click "Bind Phone" to link their device.`);
 }
 
-// --- MANUAL PUNCH ---
+// --- MANUAL PUNCH MODAL ---
 function openManualPunchModal() {
-  populateManualUserSelect(localUsers);
+  populateManualUserSelect(localEmployees);
   document.getElementById('manual-punch-modal').classList.remove('hidden');
 }
 
@@ -492,15 +463,15 @@ function closeManualPunchModal() {
   document.getElementById('manual-punch-modal').classList.add('hidden');
 }
 
-function populateManualUserSelect(users) {
+function populateManualUserSelect(employees) {
   const select = document.getElementById('manual-user-select');
   if (!select) return;
-  if (users.length === 0) {
+  if (employees.length === 0) {
     select.innerHTML = '<option value="">No registered employees</option>';
     return;
   }
-  select.innerHTML = users.map(u => `
-    <option value="${u.id}">${u.name} (+${u.phone})</option>
+  select.innerHTML = employees.map(e => `
+    <option value="${e.id}">${e.name} (${e.department || 'General'})</option>
   `).join('');
 }
 
@@ -514,14 +485,14 @@ async function handleManualPunchSubmit(e) {
     return;
   }
 
-  const user = localUsers.find(u => u.id === userId);
+  const emp = localEmployees.find(e => e.id === userId);
   const now = new Date();
   const timeFormatted = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
 
   const logEntry = {
     id: `log-${Date.now()}`,
     userId,
-    userName: user ? user.name : 'Employee',
+    userName: emp ? emp.name : 'Employee',
     eventType: forcedType,
     time: now.toISOString(),
     formattedTime: timeFormatted,
@@ -529,16 +500,16 @@ async function handleManualPunchSubmit(e) {
   };
 
   localLogs.unshift(logEntry);
-  if (user) {
-    user.status = forcedType === 'CHECK_IN' ? 'IN' : 'OUT';
+  if (emp) {
+    emp.status = forcedType === 'CHECK_IN' ? 'IN' : 'OUT';
   }
-  localStorage.setItem('smartattend_users', JSON.stringify(localUsers));
+  localStorage.setItem('smartattend_employees', JSON.stringify(localEmployees));
   localStorage.setItem('smartattend_logs', JSON.stringify(localLogs));
 
-  await fetch('/api/attendance/scan', {
+  await fetch('/api/attendance/punch', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId, method: 'REVERSE_SCAN', forcedType })
+    body: JSON.stringify({ userId, method: 'MANUAL_ADMIN', forcedType })
   });
 
   const form = document.getElementById('manual-punch-form');
@@ -546,13 +517,12 @@ async function handleManualPunchSubmit(e) {
   closeManualPunchModal();
 
   fetchAdminData();
-  showToast('Attendance Recorded', `${user ? user.name : 'Employee'} marked as ${forcedType === 'CHECK_IN' ? 'Clocked IN' : 'Clocked OUT'}`);
+  showToast('Attendance Recorded', `${emp ? emp.name : 'Employee'} marked as ${forcedType === 'CHECK_IN' ? 'Clocked IN' : 'Clocked OUT'}`);
 }
 
-// --- SEARCH & SIMULATOR ---
 function handleEmployeeSearch() {
   const query = document.getElementById('employee-search-input').value.toLowerCase();
-  const filtered = localUsers.filter(u => u.name.toLowerCase().includes(query) || u.phone.includes(query));
+  const filtered = localEmployees.filter(e => e.name.toLowerCase().includes(query) || (e.department && e.department.toLowerCase().includes(query)));
   renderAdminRoster(filtered);
 }
 
@@ -562,92 +532,4 @@ function clearLogsAudit() {
   localStorage.setItem('smartattend_logs', JSON.stringify([]));
   fetchAdminData();
   showToast('Logs Cleared', 'Audit log history has been reset.');
-}
-
-function populateSimUserSelect(users) {
-  const select = document.getElementById('sim-user-select');
-  if (!select) return;
-  if (users.length === 0) {
-    select.innerHTML = '<option value="">No registered employees</option>';
-    return;
-  }
-  select.innerHTML = users.map(u => `
-    <option value="${u.phone}">${u.name} (+${u.phone})</option>
-  `).join('');
-  syncKioskTokenToForm();
-}
-
-function syncKioskTokenToForm() {
-  const input = document.getElementById('sim-token-input');
-  if (input && currentKioskToken) {
-    input.value = currentKioskToken;
-  }
-}
-
-async function handleMobileScanSubmit(e) {
-  e.preventDefault();
-  const phone = document.getElementById('sim-user-select').value;
-  const token = document.getElementById('sim-token-input').value.trim();
-
-  const responseBox = document.getElementById('sim-response-box');
-  const bubble = document.getElementById('sim-whatsapp-bubble');
-
-  const res = await fetch('/api/whatsapp/webhook', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ senderPhone: phone, messageText: `IN-${token}` })
-  });
-  const data = await res.json();
-  responseBox.classList.remove('hidden');
-  bubble.textContent = data.replyMessage;
-
-  fetchAdminData();
-}
-
-// --- OFFLINE BADGE ---
-function populateBadgeSelect() {
-  const select = document.getElementById('badge-user-select');
-  if (!select || localUsers.length === 0) return;
-  select.innerHTML = localUsers.map(u => `
-    <option value="${u.id}">${u.name} - ${u.department}</option>
-  `).join('');
-}
-
-function renderEmployeeBadge() {
-  const select = document.getElementById('badge-user-select');
-  if (!select) return;
-  const userId = select.value || (localUsers[0] && localUsers[0].id);
-  const user = localUsers.find(u => u.id === userId) || localUsers[0];
-
-  if (!user) return;
-
-  document.getElementById('badge-emp-id').textContent = user.id;
-  document.getElementById('badge-emp-phone').textContent = user.phone;
-
-  const badgeContainer = document.getElementById('badge-qrcode');
-  if (badgeContainer) {
-    badgeContainer.innerHTML = '';
-    badgeQRCodeObj = new QRCode(badgeContainer, {
-      text: JSON.stringify({ employeeId: user.id, phone: user.phone }),
-      width: 180,
-      height: 180,
-      colorDark : "#581c87",
-      colorLight : "#ffffff",
-      correctLevel : QRCode.CorrectLevel.H
-    });
-  }
-}
-
-async function simulateReverseScan() {
-  const select = document.getElementById('badge-user-select');
-  const userId = select.value;
-
-  const res = await fetch('/api/attendance/scan', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId, method: 'REVERSE_SCAN' })
-  });
-  const data = await res.json();
-  showToast('Camera Scan Success', `${data.message} (${data.userName})`);
-  fetchAdminData();
 }
