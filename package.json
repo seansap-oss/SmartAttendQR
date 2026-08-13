@@ -1,0 +1,12 @@
+{
+  "name": "smartattend-saas",
+  "version": "1.0.0",
+  "description": "WhatsApp & Dynamic QR Attendance SaaS System",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": ["attendance", "whatsapp", "qr-code", "totp", "saas"],
+  "author": "",
+  "license": "MIT"
+}
