@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SmartAttend SaaS - Enterprise Attendance & Roster System</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <style>
+    .pulse-green {
+      animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: .4; }
+    }
+    #toast-notification {
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans antialiased selection:bg-emerald-500 selection:text-slate-950">
+
+  <!-- PASSWORD PROTECTION MODAL (PASSWORD: admin@123) -->
+  <div id="auth-lock-modal" class="fixed inset-0 bg-slate-950 z-50 flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 w-full max-w-md space-y-6 shadow-2xl text-center">
+      <div class="w-16 h-16 rounded-3xl bg-gradient-to-tr from-emerald-500 to-teal-400 text-slate-950 flex items-center justify-center text-3xl font-black mx-auto shadow-lg shadow-emerald-500/20">
+        <i class="fa-solid fa-lock"></i>
+      </div>
+
+      <div>
+        <h2 class="text-xl font-black text-white">Protected Demo Portal</h2>
+        <p class="text-xs text-slate-400 mt-1">Please enter the demo access password to unlock the admin dashboard & kiosk system.</p>
+      </div>
+
+      <form onsubmit="handleAuthSubmit(event)" class="space-y-4 text-xs">
+        <div class="space-y-1.5 text-left">
+          <label class="block text-slate-300 font-semibold">Access Password:</label>
+          <input type="password" id="auth-password-input" required placeholder="Enter password (admin@123)" class="w-full bg-slate-950 border border-slate-700 text-white font-mono text-sm p-3.5 rounded-xl focus:outline-none focus:border-emerald-500">
+        </div>
+
+        <div id="auth-error-msg" class="hidden text-rose-400 text-[11px] font-bold">
+          ❌ Incorrect Password. Use <span class="font-mono text-white">admin@123</span>
+        </div>
+
+        <button type="submit" class="w-full py-4 bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-black text-sm rounded-xl shadow-lg shadow-emerald-500/20 hover:opacity-95 transition">
+          UNLOCK DEMO SYSTEM
+        </button>
+      </form>
+
+      <div class="pt-3 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-500">
+        <a href="/" class="text-slate-400 hover:text-emerald-400 transition flex items-center gap-1">
+          <i class="fa-solid fa-arrow-left"></i>
+          <span>Back to Landing Page</span>
+        </a>
+        <span>Demo Key: <strong class="text-slate-400 font-mono">admin@123</strong></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION -->
+  <div id="toast-notification" class="fixed top-5 right-5 z-50 transform translate-y-[-150%] opacity-0 bg-slate-900 border border-slate-700 shadow-2xl rounded-2xl p-4 flex items-center space-x-3 max-w-sm pointer-events-none">
+    <div id="toast-icon" class="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-lg">
+      <i class="fa-solid fa-check"></i>
+    </div>
+    <div>
+      <div id="toast-title" class="text-xs font-bold text-white">Notification</div>
+      <div id="toast-message" class="text-xs text-slate-300">Message description</div>
+    </div>
+  </div>
+
+  <!-- TOP HEADER -->
+  <header class="bg-slate-900/90 border-b border-slate-800 sticky top-0 z-40 backdrop-blur-md">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-16">
+        <div class="flex items-center space-x-3">
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-slate-950 font-bold text-xl shadow-lg shadow-emerald-500/20">
+            <i class="fa-solid fa-qrcode"></i>
+          </div>
+          <div>
+            <span class="text-lg font-bold text-white tracking-wide">SmartAttend<span class="text-emerald-400">SaaS</span></span>
+            <span class="block text-[11px] text-slate-400">Offline-First Attendance & Roster System</span>
+          </div>
+        </div>
+
+        <div class="flex items-center space-x-3">
+          <!-- Back to Landing Page Link -->
+          <a href="/" class="hidden md:flex px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl border border-slate-700 transition items-center space-x-1.5">
+            <i class="fa-solid fa-house text-emerald-400"></i>
+            <span>Landing Page</span>
+          </a>
+
+          <!-- Live Network / Storage Indicator -->
+          <div id="network-badge" class="hidden sm:flex items-center space-x-1.5 px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full text-[11px] font-mono font-semibold">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 pulse-green"></span>
+            <span id="network-status-text">Local Disk & Cloud Synced</span>
+          </div>
+
+          <nav class="flex space-x-1 sm:space-x-2 bg-slate-950/80 p-1.5 rounded-xl border border-slate-800">
+            <button onclick="switchTab('kiosk')" id="tab-kiosk" class="px-3.5 py-1.5 text-xs sm:text-sm font-semibold rounded-lg transition-all flex items-center space-x-2 text-emerald-400 bg-slate-800/90 shadow-sm border border-emerald-500/30">
+              <i class="fa-solid fa-desktop text-emerald-400"></i>
+              <span>Reception Kiosk</span>
+            </button>
+            <button onclick="switchTab('dashboard')" id="tab-dashboard" class="px-3.5 py-1.5 text-xs sm:text-sm font-medium text-slate-400 hover:text-white rounded-lg transition-all flex items-center space-x-2">
+              <i class="fa-solid fa-chart-line text-blue-400"></i>
+              <span>Admin Dashboard</span>
+            </button>
+          </nav>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN CONTAINER -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+    <!-- PAGE 1: RECEPTION KIOSK SCREEN -->
+    <section id="view-kiosk" class="space-y-6">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <!-- Dynamic 30s Kiosk QR Card -->
+        <div class="lg:col-span-7 bg-slate-900/90 rounded-3xl p-6 sm:p-8 border border-slate-800 shadow-2xl flex flex-col items-center justify-center text-center relative overflow-hidden">
+          <div class="absolute -top-24 -left-24 w-52 h-52 bg-emerald-500/10 rounded-full blur-3xl"></div>
+
+          <div class="inline-flex items-center px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold rounded-full mb-3">
+            <i class="fa-solid fa-shield-check mr-1.5"></i> 1-Phone Device Binding Active
+          </div>
+
+          <h3 class="text-2xl sm:text-3xl font-black text-white tracking-tight">Scan with Your Registered Phone</h3>
+          <p class="text-xs text-slate-400 mt-1 mb-6 max-w-sm">QR Code rotates every <strong class="text-emerald-400">30 seconds</strong>. Zero dropdowns, zero proxy punches.</p>
+
+          <!-- QR Code Container -->
+          <div class="relative p-5 bg-white rounded-3xl shadow-2xl border-4 border-slate-800 flex flex-col items-center min-w-[240px] min-h-[240px]">
+            <div id="kiosk-qrcode"></div>
+            <div class="mt-3 px-4 py-1.5 bg-slate-950 text-emerald-400 font-mono font-bold text-xs sm:text-sm tracking-widest rounded-xl border border-slate-800">
+              TOKEN: <span id="kiosk-token-code">CONNECTING</span>
+            </div>
+          </div>
+
+          <!-- Countdown Timer -->
+          <div class="w-full max-w-xs mt-6 space-y-1.5">
+            <div class="flex justify-between text-xs font-semibold text-slate-400">
+              <span>Token Rotation:</span>
+              <span id="kiosk-seconds" class="text-emerald-400 font-mono font-bold">30s</span>
+            </div>
+            <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+              <div id="kiosk-timer-bar" class="bg-gradient-to-r from-emerald-500 to-teal-300 h-full w-full transition-all duration-1000"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Live Reception Feed Card -->
+        <div class="lg:col-span-5 bg-slate-900/90 rounded-3xl p-6 sm:p-7 border border-slate-800 shadow-2xl flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+              <h3 class="text-base font-bold text-white flex items-center space-x-2">
+                <i class="fa-solid fa-bolt text-amber-400"></i>
+                <span>Live Reception Activity Feed</span>
+              </h3>
+              <span class="text-[11px] px-2.5 py-1 bg-slate-800 text-slate-300 rounded-lg">Instant Sync</span>
+            </div>
+
+            <div id="kiosk-ticker-list" class="mt-4 space-y-3 max-h-[380px] overflow-y-auto pr-1"></div>
+          </div>
+
+          <div class="mt-4 pt-4 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400 font-mono">
+            <span>Terminal: <strong class="text-slate-200">Main Lobby #01</strong></span>
+            <span class="text-emerald-400 font-semibold flex items-center"><span class="w-2 h-2 rounded-full bg-emerald-400 mr-1.5 pulse-green"></span> Kiosk Online</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PAGE 2: ADMIN & HR DASHBOARD -->
+    <section id="view-dashboard" class="hidden space-y-6">
+      <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div>
+          <h2 class="text-2xl font-black text-white tracking-tight">Admin & HR Attendance Portal</h2>
+          <p class="text-xs text-slate-400 mt-0.5">Scaleable roster manager, punctuality warnings, overtime tracking, local backups & cloud sync</p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <!-- 1-Click Backup to Hard Drive -->
+          <button onclick="backupDatabaseToJSON()" title="Save all employees & logs as a JSON backup on hard drive" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs rounded-xl transition flex items-center space-x-1.5">
+            <i class="fa-solid fa-hard-drive text-emerald-400"></i>
+            <span>Backup to Disk</span>
+          </button>
+
+          <!-- 1-Click Sync to Cloud -->
+          <button onclick="syncLocalDataToServer(true)" title="Upload and sync offline local records to cloud" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs rounded-xl transition flex items-center space-x-1.5">
+            <i class="fa-solid fa-cloud-arrow-up text-blue-400"></i>
+            <span>Sync Cloud</span>
+          </button>
+
+          <!-- Export Excel CSV -->
+          <button onclick="exportCompanyTimesheetCSV()" class="px-3.5 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 font-bold text-xs rounded-xl transition flex items-center space-x-1.5 shadow-sm">
+            <i class="fa-solid fa-file-excel"></i>
+            <span>Export to Excel</span>
+          </button>
+
+          <button onclick="openManualPunchModal()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl border border-slate-700 transition flex items-center space-x-1.5">
+            <i class="fa-solid fa-user-clock text-amber-400"></i>
+            <span>Manual Punch</span>
+          </button>
+
+          <button onclick="openAddUserModal()" class="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-emerald-500/20 hover:opacity-95 transition flex items-center space-x-1.5">
+            <i class="fa-solid fa-user-plus"></i>
+            <span>Register Employee</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- KPI Metrics Cards -->
+      <div class="grid grid-cols-2 lg:grid-cols-5 gap-3.5">
+        <div class="bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow">
+          <div class="flex items-center justify-between text-slate-400 text-xs font-medium">
+            <span>Total Staff</span>
+            <i class="fa-solid fa-users text-blue-400"></i>
+          </div>
+          <div id="kpi-total-emp" class="text-2xl font-black text-white mt-1.5">0</div>
+        </div>
+
+        <div class="bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow">
+          <div class="flex items-center justify-between text-slate-400 text-xs font-medium">
+            <span>Clocked In</span>
+            <i class="fa-solid fa-right-to-bracket text-emerald-400"></i>
+          </div>
+          <div id="kpi-checked-in" class="text-2xl font-black text-emerald-400 mt-1.5">0</div>
+        </div>
+
+        <div class="bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow">
+          <div class="flex items-center justify-between text-slate-400 text-xs font-medium">
+            <span>Clocked Out</span>
+            <i class="fa-solid fa-right-from-bracket text-slate-400"></i>
+          </div>
+          <div id="kpi-checked-out" class="text-2xl font-black text-slate-200 mt-1.5">0</div>
+        </div>
+
+        <div class="bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow">
+          <div class="flex items-center justify-between text-slate-400 text-xs font-medium">
+            <span>Late Today</span>
+            <i class="fa-solid fa-triangle-exclamation text-rose-400"></i>
+          </div>
+          <div id="kpi-late-count" class="text-2xl font-black text-rose-400 mt-1.5">0</div>
+        </div>
+
+        <div class="bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow">
+          <div class="flex items-center justify-between text-slate-400 text-xs font-medium">
+            <span>Overtime Active</span>
+            <i class="fa-solid fa-business-time text-purple-400"></i>
+          </div>
+          <div id="kpi-overtime-count" class="text-2xl font-black text-purple-400 mt-1.5">0</div>
+        </div>
+      </div>
+
+      <!-- Advanced Filter & Search Toolbar -->
+      <div class="bg-slate-900/80 p-4 rounded-2xl border border-slate-800 flex flex-wrap items-center justify-between gap-3">
+        <div class="flex flex-wrap items-center gap-2.5">
+          <div class="relative">
+            <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-500 text-xs"></i>
+            <input type="text" id="filter-search-input" oninput="applyFilters()" placeholder="Search name or phone..." class="bg-slate-950 border border-slate-800 text-xs text-slate-200 pl-8 pr-3 py-2 rounded-xl w-56 focus:outline-none focus:border-emerald-500">
+          </div>
+
+          <select id="filter-dept-select" onchange="applyFilters()" class="bg-slate-950 border border-slate-800 text-xs text-slate-200 px-3 py-2 rounded-xl focus:outline-none focus:border-emerald-500">
+            <option value="ALL">All Departments</option>
+            <option value="Engineering">Engineering</option>
+            <option value="Operations">Operations</option>
+            <option value="Sales">Sales</option>
+            <option value="Design">Design</option>
+            <option value="Kitchen">Kitchen</option>
+            <option value="General">General</option>
+          </select>
+
+          <select id="filter-status-select" onchange="applyFilters()" class="bg-slate-950 border border-slate-800 text-xs text-slate-200 px-3 py-2 rounded-xl focus:outline-none focus:border-emerald-500">
+            <option value="ALL">All Statuses</option>
+            <option value="IN">Clocked IN</option>
+            <option value="OUT">Clocked OUT</option>
+            <option value="LATE">Late Arrivals Only</option>
+            <option value="OVERTIME">Overtime Active</option>
+            <option value="UNBOUND">Phones Not Bound</option>
+          </select>
+        </div>
+
+        <div class="flex items-center space-x-3 text-xs text-slate-400">
+          <label class="cursor-pointer hover:text-emerald-400 transition flex items-center space-x-1">
+            <i class="fa-solid fa-folder-open text-xs"></i>
+            <span>Restore Backup</span>
+            <input type="file" id="restore-file-input" accept=".json" onchange="restoreDatabaseFromJSON(event)" class="hidden">
+          </label>
+          <span>•</span>
+          <span class="font-mono">Showing: <strong id="filtered-count" class="text-white font-bold">0</strong> staff</span>
+        </div>
+      </div>
+
+      <!-- Main Registered Employees Table -->
+      <div class="bg-slate-900 rounded-3xl p-6 border border-slate-800 shadow-xl">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs text-slate-300">
+            <thead class="text-[11px] uppercase bg-slate-950/80 text-slate-400 font-semibold tracking-wider">
+              <tr>
+                <th class="px-4 py-3.5 rounded-l-xl">EMPLOYEE</th>
+                <th class="px-4 py-3.5">DEPARTMENT</th>
+                <th class="px-4 py-3.5">ROSTER / SHIFT</th>
+                <th class="px-4 py-3.5">DEVICE LINK</th>
+                <th class="px-4 py-3.5">STATUS</th>
+                <th class="px-4 py-3.5">CLOCK-IN</th>
+                <th class="px-4 py-3.5">CLOCK-OUT</th>
+                <th class="px-4 py-3.5">HOURS TODAY</th>
+                <th class="px-4 py-3.5 text-right rounded-r-xl">ACTIONS</th>
+              </tr>
+            </thead>
+            <tbody id="admin-user-tbody" class="divide-y divide-slate-800/60 font-sans"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Activity Logs -->
+      <div class="bg-slate-900 rounded-3xl p-6 border border-slate-800 shadow-xl">
+        <div class="flex items-center justify-between pb-4 border-b border-slate-800 mb-4">
+          <h3 class="text-base font-bold text-white flex items-center gap-2">
+            <i class="fa-solid fa-clock-rotate-left text-blue-400"></i>
+            <span>Timestamp Audit Trail (Hours, Minutes, Seconds)</span>
+          </h3>
+          <button onclick="clearLogsAudit()" class="text-xs text-rose-400 hover:underline">Clear Logs</button>
+        </div>
+        <div id="admin-logs-list" class="space-y-2 max-h-[300px] overflow-y-auto pr-1"></div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- MODAL 1: REGISTER EMPLOYEE -->
+  <div id="add-user-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-md space-y-5 shadow-2xl">
+      <div class="flex justify-between items-center pb-3 border-b border-slate-800">
+        <h3 class="text-base font-bold text-white">Register New Employee</h3>
+        <button onclick="closeAddUserModal()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+      </div>
+
+      <form id="add-user-form" onsubmit="handleAddUserSubmit(event)" class="space-y-4 text-xs">
+        <div>
+          <label class="block text-slate-300 font-medium mb-1">Full Name:</label>
+          <input type="text" id="new-name" required placeholder="e.g. Sean Sapam" class="w-full bg-slate-950 border border-slate-700 text-white p-3 rounded-xl focus:outline-none focus:border-emerald-500">
+        </div>
+
+        <div>
+          <label class="block text-slate-300 font-medium mb-1">Department:</label>
+          <input type="text" id="new-dept" placeholder="Engineering / Operations / Sales / Kitchen" class="w-full bg-slate-950 border border-slate-700 text-white p-3 rounded-xl focus:outline-none focus:border-emerald-500">
+        </div>
+
+        <div>
+          <label class="block text-slate-300 font-medium mb-1">Phone Number (Optional):</label>
+          <input type="text" id="new-phone" placeholder="e.g. 61412345678" class="w-full bg-slate-950 border border-slate-700 text-white p-3 rounded-xl focus:outline-none focus:border-emerald-500">
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-slate-300 font-medium mb-1">Roster Type:</label>
+            <select id="new-emp-type" onchange="handleNewEmpTypeChange()" class="w-full bg-slate-950 border border-slate-700 text-white p-3 rounded-xl focus:outline-none focus:border-emerald-500">
+              <option value="FULL_TIME">Full-Time (8 hrs)</option>
+              <option value="PART_TIME">Part-Time (4 hrs)</option>
+              <option value="CASUAL">Casual / Shift</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-slate-300 font-medium mb-1">Daily Target Hours:</label>
+            <input type="number" id="new-target-hours" step="0.5" value="8" class="w-full bg-slate-950 border border-slate-700 text-white p-3 rounded-xl focus:outline-none focus:border-emerald-500">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-slate-300 font-medium mb-1">Shift Start Time:</label>
+            <input type="time" id="new-shift-start" value="09:00" class="w-full bg-slate-950 border border-slate-700 text-white p-3 rounded-xl focus:outline-none focus:border-emerald-500">
+          </div>
+          <div>
+            <label class="block text-slate-300 font-medium mb-1">Shift End Time:</label>
+            <input type="time" id="new-shift-end" value="17:00" class="w-full bg-slate-950 border border-slate-700 text-white p-3 rounded-xl focus:outline-none focus:border-emerald-500">
+          </div>
+        </div>
+
+        <div class="flex justify-end space-x-3 pt-2">
+          <button type="button" onclick="closeAddUserModal()" class="px-4 py-2.5 bg-slate-800 text-slate-300 rounded-xl font-semibold">Cancel</button>
+          <button type="submit" class="px-5 py-2.5 bg-emerald-500 text-slate-950 font-bold rounded-xl shadow-lg">Save Employee</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL 2: EDIT EMPLOYEE ROSTER -->
+  <div id="edit-employee-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-md space-y-5 shadow-2xl">
+      <div class="flex justify-between items-center pb-3 border-b border-slate-800">
+        <h3 class="text-base font-bold text-white">Edit Employee & Roster</h3>
+        <button onclick="closeEditModal()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+      </div>
+
+      <form id="edit-employee-form" onsubmit="handleEditEmployeeSubmit(event)" class="space-y-4 text-xs">
+        <input type="hidden" id="edit-emp-id">
+
+        <div>
+          <label class="block text-slate-300 font-medium mb-1">Full Name:</label>
+          <input type="text" id="edit-name" required class="w-full bg-slate-950 border border-slate-700 text-white p-3 rounded-xl focus:outline-none focus:border-emerald-500">
+        </div>
+
+        <div>
+          <label class="block text-slate-300 font-medium mb-1">Department:</label>
+          <input type="text" id="edit-dept" class="w-full bg-slate-950 border border-slate-700 text-white p-3 rounded-xl focus:outline-none focus:border-emerald-500">
+        </div>
+
+        <div>
+          <label class="block text-slate-300 font-medium mb-1">Phone Number:</label>
+          <input type="text" id="edit-phone" class="w-full bg-slate-950 border border-slate-700 text-white p-3 rounded-xl focus:outline-none focus:border-emerald-500">
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-slate-300 font-medium mb-1">Roster Type:</label>
+            <select id="edit-emp-type" class="w-full bg-slate-950 border border-slate-700 text-white p-3 rounded-xl focus:outline-none focus:border-emerald-500">
+              <option value="FULL_TIME">Full-Time</option>
+              <option value="PART_TIME">Part-Time</option>
+              <option value="CASUAL">Casual</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-slate-300 font-medium mb-1">Daily Target Hours:</label>
+            <input type="number" id="edit-target-hours" step="0.5" class="w-full bg-slate-950 border border-slate-700 text-white p-3 rounded-xl focus:outline-none focus:border-emerald-500">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-slate-300 font-medium mb-1">Shift Start Time:</label>
+            <input type="time" id="edit-shift-start" class="w-full bg-slate-950 border border-slate-700 text-white p-3 rounded-xl focus:outline-none focus:border-emerald-500">
+          </div>
+          <div>
+            <label class="block text-slate-300 font-medium mb-1">Shift End Time:</label>
+            <input type="time" id="edit-shift-end" class="w-full bg-slate-950 border border-slate-700 text-white p-3 rounded-xl focus:outline-none focus:border-emerald-500">
+          </div>
+        </div>
+
+        <div class="flex justify-end space-x-3 pt-2">
+          <button type="button" onclick="closeEditModal()" class="px-4 py-2.5 bg-slate-800 text-slate-300 rounded-xl font-semibold">Cancel</button>
+          <button type="submit" class="px-5 py-2.5 bg-emerald-500 text-slate-950 font-bold rounded-xl shadow-lg">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL 3: BIND PHONE ACTIVATION QR -->
+  <div id="bind-device-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 w-full max-w-md space-y-5 shadow-2xl text-center">
+      <div class="flex justify-between items-center pb-3 border-b border-slate-800">
+        <h3 class="text-base font-bold text-white text-left">Bind Personal Smartphone</h3>
+        <button onclick="closeBindModal()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+      </div>
+
+      <div>
+        <h4 class="text-lg font-black text-white" id="bind-modal-emp-name">Employee</h4>
+        <p class="text-xs text-slate-400 mt-1">Scan this QR code <strong>ONCE</strong> with the employee's personal smartphone camera.</p>
+      </div>
+
+      <div class="flex justify-center my-3">
+        <div class="bg-white p-4 rounded-2xl shadow-2xl border-4 border-slate-800 inline-flex items-center justify-center min-w-[220px] min-h-[220px]">
+          <div id="bind-qrcode"></div>
+        </div>
+      </div>
+
+      <div class="space-y-1.5 text-left">
+        <label class="text-[11px] text-slate-400 font-semibold">Or share direct activation link:</label>
+        <div class="flex items-center space-x-2">
+          <input type="text" id="bind-url-input" readonly class="w-full bg-slate-950 border border-slate-800 text-emerald-400 font-mono text-[11px] px-3 py-2 rounded-xl select-all">
+          <button onclick="copyBindUrl()" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl shrink-0 border border-slate-700 transition">
+            <i class="fa-solid fa-copy mr-1"></i> Copy
+          </button>
+        </div>
+      </div>
+
+      <button onclick="closeBindModal()" class="w-full py-3 bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs rounded-xl transition">Done</button>
+    </div>
+  </div>
+
+  <!-- MODAL 4: EXPANSIVE EMPLOYEE TIMESHEET DRAWER -->
+  <div id="timesheet-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 w-full max-w-3xl space-y-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+      <div class="flex justify-between items-start pb-4 border-b border-slate-800">
+        <div class="flex items-center space-x-4">
+          <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 text-slate-950 flex items-center justify-center text-xl font-black" id="detail-avatar">
+            S
+          </div>
+          <div>
+            <h3 class="text-xl font-black text-white" id="detail-name">Employee Name</h3>
+            <p class="text-xs text-slate-400 mt-0.5" id="detail-meta">Department • Shift Details</p>
+          </div>
+        </div>
+        <div class="flex items-center space-x-2">
+          <button onclick="exportSingleEmployeeTimesheetCSV()" class="px-3.5 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 text-xs font-bold rounded-xl flex items-center space-x-1.5 transition">
+            <i class="fa-solid fa-file-excel"></i>
+            <span>Export Timesheet</span>
+          </button>
+          <button onclick="closeTimesheetModal()" class="text-slate-400 hover:text-white p-2"><i class="fa-solid fa-xmark text-lg"></i></button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-center">
+          <div class="text-[11px] font-semibold text-slate-400">Today's Duration</div>
+          <div id="detail-today-hours" class="text-lg font-bold text-emerald-400 mt-1 font-mono">0h 0m 0s</div>
+        </div>
+        <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-center">
+          <div class="text-[11px] font-semibold text-slate-400">Overtime Today</div>
+          <div id="detail-overtime-hours" class="text-lg font-bold text-purple-400 mt-1 font-mono">0h 0m 0s</div>
+        </div>
+        <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-center">
+          <div class="text-[11px] font-semibold text-slate-400">Weekly (7 Days)</div>
+          <div id="detail-weekly-hours" class="text-lg font-bold text-blue-400 mt-1 font-mono">0h 0m 0s</div>
+        </div>
+        <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-center">
+          <div class="text-[11px] font-semibold text-slate-400">Monthly Total</div>
+          <div id="detail-monthly-hours" class="text-lg font-bold text-teal-400 mt-1 font-mono">0h 0m 0s</div>
+        </div>
+      </div>
+
+      <div>
+        <h4 class="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2.5 flex items-center justify-between">
+          <span>Punch Audit Log Breakdown</span>
+          <span class="text-[11px] text-slate-500 font-normal">Exact Hours, Minutes & Seconds</span>
+        </h4>
+        <div id="detail-punch-history" class="space-y-2 max-h-60 overflow-y-auto pr-1"></div>
+      </div>
+
+      <div class="flex flex-wrap items-center justify-between pt-4 border-t border-slate-800 gap-3">
+        <div class="flex items-center space-x-2">
+          <button id="detail-edit-btn" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition">
+            <i class="fa-solid fa-pen-to-square mr-1.5 text-blue-400"></i> Edit Roster
+          </button>
+          <button id="detail-unbind-btn" class="px-4 py-2 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 text-xs font-bold rounded-xl border border-amber-500/30 transition">
+            <i class="fa-solid fa-link-slash mr-1.5"></i> Reset Phone
+          </button>
+        </div>
+        <div class="flex items-center space-x-2">
+          <button id="detail-delete-btn" class="px-4 py-2 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 text-xs font-bold rounded-xl border border-rose-500/30 transition">
+            <i class="fa-solid fa-trash mr-1.5"></i> Delete Employee
+          </button>
+          <button onclick="closeTimesheetModal()" class="px-5 py-2 bg-slate-800 text-white text-xs font-bold rounded-xl">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 5: MANUAL PUNCH WITH LEAVE & REASON CATEGORIES -->
+  <div id="manual-punch-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-md space-y-5 shadow-2xl">
+      <div class="flex justify-between items-center pb-3 border-b border-slate-800">
+        <h3 class="text-base font-bold text-white">Manual Attendance Punch</h3>
+        <button onclick="closeManualPunchModal()" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+      </div>
+
+      <form id="manual-punch-form" onsubmit="handleManualPunchSubmit(event)" class="space-y-4 text-xs">
+        <div>
+          <label class="block text-slate-300 font-medium mb-1">Select Employee:</label>
+          <select id="manual-user-select" class="w-full bg-slate-950 border border-slate-700 text-white p-3 rounded-xl focus:outline-none focus:border-emerald-500"></select>
+        </div>
+
+        <div>
+          <label class="block text-slate-300 font-medium mb-1">Punch Action:</label>
+          <div class="grid grid-cols-2 gap-3">
+            <label class="cursor-pointer bg-slate-950 p-3 rounded-xl border border-slate-800 flex items-center space-x-2">
+              <input type="radio" name="manual-type" value="CHECK_IN" checked class="text-emerald-500">
+              <span class="text-emerald-400 font-bold">Clock IN</span>
+            </label>
+            <label class="cursor-pointer bg-slate-950 p-3 rounded-xl border border-slate-800 flex items-center space-x-2">
+              <input type="radio" name="manual-type" value="CHECK_OUT" class="text-rose-500">
+              <span class="text-rose-400 font-bold">Clock OUT</span>
+            </label>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-slate-300 font-medium mb-1">Shift / Leave Category:</label>
+          <select id="manual-category-select" class="w-full bg-slate-950 border border-slate-700 text-white p-3 rounded-xl focus:outline-none focus:border-emerald-500">
+            <option value="REGULAR">Regular Shift</option>
+            <option value="OVERTIME">Overtime Shift</option>
+            <option value="SICK_LEAVE">Sick Leave</option>
+            <option value="ANNUAL_LEAVE">Annual Leave</option>
+            <option value="UNPAID_LEAVE">Unpaid Leave</option>
+          </select>
+        </div>
+
+        <div class="flex justify-end space-x-3 pt-2">
+          <button type="button" onclick="closeManualPunchModal()" class="px-4 py-2.5 bg-slate-800 text-slate-300 rounded-xl font-semibold">Cancel</button>
+          <button type="submit" class="px-5 py-2.5 bg-emerald-500 text-slate-950 font-bold rounded-xl shadow-lg">Submit Punch</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+  <script>
+    // Check if demo is already unlocked in this session
+    document.addEventListener('DOMContentLoaded', () => {
+      const isAuth = sessionStorage.getItem('smartattend_demo_auth');
+      if (isAuth === 'true') {
+        document.getElementById('auth-lock-modal').classList.add('hidden');
+      }
+    });
+
+    function handleAuthSubmit(e) {
+      e.preventDefault();
+      const pwd = document.getElementById('auth-password-input').value.trim();
+      if (pwd === 'admin@123') {
+        sessionStorage.setItem('smartattend_demo_auth', 'true');
+        document.getElementById('auth-lock-modal').classList.add('hidden');
+        showToast('Demo Unlocked', 'Welcome to the SmartAttend Admin & Kiosk System.');
+      } else {
+        document.getElementById('auth-error-msg').classList.remove('hidden');
+      }
+    }
+  </script>
+</body>
+</html>
