@@ -43,20 +43,28 @@
           </div>
           <div>
             <span class="text-lg font-bold text-white tracking-wide">SmartAttend<span class="text-emerald-400">SaaS</span></span>
-            <span class="block text-[11px] text-slate-400">Enterprise Attendance, Roster & Payroll Timesheets</span>
+            <span class="block text-[11px] text-slate-400">Offline-First Attendance & Roster System</span>
           </div>
         </div>
 
-        <nav class="flex space-x-1 sm:space-x-2 bg-slate-950/80 p-1.5 rounded-xl border border-slate-800">
-          <button onclick="switchTab('kiosk')" id="tab-kiosk" class="px-3.5 py-1.5 text-xs sm:text-sm font-semibold rounded-lg transition-all flex items-center space-x-2 text-emerald-400 bg-slate-800/90 shadow-sm border border-emerald-500/30">
-            <i class="fa-solid fa-desktop text-emerald-400"></i>
-            <span>Reception Kiosk</span>
-          </button>
-          <button onclick="switchTab('dashboard')" id="tab-dashboard" class="px-3.5 py-1.5 text-xs sm:text-sm font-medium text-slate-400 hover:text-white rounded-lg transition-all flex items-center space-x-2">
-            <i class="fa-solid fa-chart-line text-blue-400"></i>
-            <span>Admin Dashboard</span>
-          </button>
-        </nav>
+        <div class="flex items-center space-x-3">
+          <!-- Live Network / Storage Indicator -->
+          <div id="network-badge" class="hidden sm:flex items-center space-x-1.5 px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full text-[11px] font-mono font-semibold">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 pulse-green"></span>
+            <span id="network-status-text">Local Disk & Cloud Synced</span>
+          </div>
+
+          <nav class="flex space-x-1 sm:space-x-2 bg-slate-950/80 p-1.5 rounded-xl border border-slate-800">
+            <button onclick="switchTab('kiosk')" id="tab-kiosk" class="px-3.5 py-1.5 text-xs sm:text-sm font-semibold rounded-lg transition-all flex items-center space-x-2 text-emerald-400 bg-slate-800/90 shadow-sm border border-emerald-500/30">
+              <i class="fa-solid fa-desktop text-emerald-400"></i>
+              <span>Reception Kiosk</span>
+            </button>
+            <button onclick="switchTab('dashboard')" id="tab-dashboard" class="px-3.5 py-1.5 text-xs sm:text-sm font-medium text-slate-400 hover:text-white rounded-lg transition-all flex items-center space-x-2">
+              <i class="fa-solid fa-chart-line text-blue-400"></i>
+              <span>Admin Dashboard</span>
+            </button>
+          </nav>
+        </div>
       </div>
     </div>
   </header>
@@ -72,7 +80,7 @@
           <div class="absolute -top-24 -left-24 w-52 h-52 bg-emerald-500/10 rounded-full blur-3xl"></div>
 
           <div class="inline-flex items-center px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold rounded-full mb-3">
-            <i class="fa-solid fa-shield-check mr-1.5"></i> 1-Phone Device Security Active
+            <i class="fa-solid fa-shield-check mr-1.5"></i> 1-Phone Device Binding Active
           </div>
 
           <h3 class="text-2xl sm:text-3xl font-black text-white tracking-tight">Scan with Your Registered Phone</h3>
@@ -120,23 +128,38 @@
       </div>
     </section>
 
-    <!-- PAGE 2: ADMIN & HR DASHBOARD (SCALABLE 50-1000+ STAFF) -->
+    <!-- PAGE 2: ADMIN & HR DASHBOARD (50-1000+ STAFF + OFFLINE BACKUP/SYNC) -->
     <section id="view-dashboard" class="hidden space-y-6">
       <!-- Admin Header & Actions Bar -->
       <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
           <h2 class="text-2xl font-black text-white tracking-tight">Admin & HR Attendance Portal</h2>
-          <p class="text-xs text-slate-400 mt-0.5">Scaleable roster manager, punctuality warnings, overtime tracking, and Excel payroll exports</p>
+          <p class="text-xs text-slate-400 mt-0.5">Scaleable roster manager, punctuality warnings, overtime tracking, local backups & cloud sync</p>
         </div>
-        <div class="flex flex-wrap items-center gap-2.5">
+        <div class="flex flex-wrap items-center gap-2">
+          <!-- 1-Click Backup to Hard Drive -->
+          <button onclick="backupDatabaseToJSON()" title="Save all employees & logs as a JSON backup on hard drive" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs rounded-xl transition flex items-center space-x-1.5">
+            <i class="fa-solid fa-hard-drive text-emerald-400"></i>
+            <span>Backup to Disk</span>
+          </button>
+
+          <!-- 1-Click Sync to Cloud -->
+          <button onclick="syncLocalDataToServer(true)" title="Upload and sync offline local records to cloud" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs rounded-xl transition flex items-center space-x-1.5">
+            <i class="fa-solid fa-cloud-arrow-up text-blue-400"></i>
+            <span>Sync Cloud</span>
+          </button>
+
+          <!-- Export Excel CSV -->
           <button onclick="exportCompanyTimesheetCSV()" class="px-3.5 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 font-bold text-xs rounded-xl transition flex items-center space-x-1.5 shadow-sm">
             <i class="fa-solid fa-file-excel"></i>
-            <span>Export to Excel (CSV)</span>
+            <span>Export to Excel</span>
           </button>
-          <button onclick="openManualPunchModal()" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl border border-slate-700 transition flex items-center space-x-1.5">
+
+          <button onclick="openManualPunchModal()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl border border-slate-700 transition flex items-center space-x-1.5">
             <i class="fa-solid fa-user-clock text-amber-400"></i>
             <span>Manual Punch</span>
           </button>
+
           <button onclick="openAddUserModal()" class="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-emerald-500/20 hover:opacity-95 transition flex items-center space-x-1.5">
             <i class="fa-solid fa-user-plus"></i>
             <span>Register Employee</span>
@@ -172,7 +195,7 @@
 
         <div class="bg-slate-900 p-4 rounded-2xl border border-slate-800 shadow">
           <div class="flex items-center justify-between text-slate-400 text-xs font-medium">
-            <span>Late Arrivals Today</span>
+            <span>Late Today</span>
             <i class="fa-solid fa-triangle-exclamation text-rose-400"></i>
           </div>
           <div id="kpi-late-count" class="text-2xl font-black text-rose-400 mt-1.5">0</div>
@@ -193,7 +216,7 @@
           <!-- Search Bar -->
           <div class="relative">
             <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-500 text-xs"></i>
-            <input type="text" id="filter-search-input" oninput="applyFilters()" placeholder="Search by name or phone..." class="bg-slate-950 border border-slate-800 text-xs text-slate-200 pl-8 pr-3 py-2 rounded-xl w-56 focus:outline-none focus:border-emerald-500">
+            <input type="text" id="filter-search-input" oninput="applyFilters()" placeholder="Search name or phone..." class="bg-slate-950 border border-slate-800 text-xs text-slate-200 pl-8 pr-3 py-2 rounded-xl w-56 focus:outline-none focus:border-emerald-500">
           </div>
 
           <!-- Department Filter -->
@@ -203,6 +226,7 @@
             <option value="Operations">Operations</option>
             <option value="Sales">Sales</option>
             <option value="Design">Design</option>
+            <option value="Kitchen">Kitchen</option>
             <option value="General">General</option>
           </select>
 
@@ -217,8 +241,15 @@
           </select>
         </div>
 
-        <div class="text-xs text-slate-400 font-mono">
-          Showing: <span id="filtered-count" class="text-white font-bold">0</span> employees
+        <div class="flex items-center space-x-3 text-xs text-slate-400">
+          <!-- Restore Backup File Input -->
+          <label class="cursor-pointer hover:text-emerald-400 transition flex items-center space-x-1">
+            <i class="fa-solid fa-folder-open text-xs"></i>
+            <span>Restore Backup</span>
+            <input type="file" id="restore-file-input" accept=".json" onchange="restoreDatabaseFromJSON(event)" class="hidden">
+          </label>
+          <span>•</span>
+          <span class="font-mono">Showing: <strong id="filtered-count" class="text-white font-bold">0</strong> staff</span>
         </div>
       </div>
 
@@ -283,7 +314,6 @@
           <input type="text" id="new-phone" placeholder="e.g. 61412345678" class="w-full bg-slate-950 border border-slate-700 text-white p-3 rounded-xl focus:outline-none focus:border-emerald-500">
         </div>
 
-        <!-- Roster / Employment Schedule -->
         <div class="grid grid-cols-2 gap-3">
           <div>
             <label class="block text-slate-300 font-medium mb-1">Roster Type:</label>
@@ -482,7 +512,7 @@
     </div>
   </div>
 
-  <!-- MODAL 5: MANUAL PUNCH -->
+  <!-- MODAL 5: MANUAL PUNCH WITH LEAVE & REASON CATEGORIES -->
   <div id="manual-punch-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
     <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-md space-y-5 shadow-2xl">
       <div class="flex justify-between items-center pb-3 border-b border-slate-800">
@@ -495,6 +525,7 @@
           <label class="block text-slate-300 font-medium mb-1">Select Employee:</label>
           <select id="manual-user-select" class="w-full bg-slate-950 border border-slate-700 text-white p-3 rounded-xl focus:outline-none focus:border-emerald-500"></select>
         </div>
+
         <div>
           <label class="block text-slate-300 font-medium mb-1">Punch Action:</label>
           <div class="grid grid-cols-2 gap-3">
@@ -508,6 +539,18 @@
             </label>
           </div>
         </div>
+
+        <div>
+          <label class="block text-slate-300 font-medium mb-1">Shift / Leave Category:</label>
+          <select id="manual-category-select" class="w-full bg-slate-950 border border-slate-700 text-white p-3 rounded-xl focus:outline-none focus:border-emerald-500">
+            <option value="REGULAR">Regular Shift</option>
+            <option value="OVERTIME">Overtime Shift</option>
+            <option value="SICK_LEAVE">Sick Leave</option>
+            <option value="ANNUAL_LEAVE">Annual Leave</option>
+            <option value="UNPAID_LEAVE">Unpaid Leave</option>
+          </select>
+        </div>
+
         <div class="flex justify-end space-x-3 pt-2">
           <button type="button" onclick="closeManualPunchModal()" class="px-4 py-2.5 bg-slate-800 text-slate-300 rounded-xl font-semibold">Cancel</button>
           <button type="submit" class="px-5 py-2.5 bg-emerald-500 text-slate-950 font-bold rounded-xl shadow-lg">Submit Punch</button>

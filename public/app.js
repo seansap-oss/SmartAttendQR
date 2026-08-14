@@ -8,7 +8,7 @@ let liveClockInterval = null;
 let activeBindingUserId = null;
 let activeTimesheetUserId = null;
 
-// LocalStorage Persistent Stores
+// LocalStorage Persistent Stores (Saves locally to Hard Drive)
 let localEmployees = JSON.parse(localStorage.getItem('smartattend_employees') || '[]');
 let localLogs = JSON.parse(localStorage.getItem('smartattend_logs') || '[]');
 
@@ -16,10 +16,32 @@ let localLogs = JSON.parse(localStorage.getItem('smartattend_logs') || '[]');
 document.addEventListener('DOMContentLoaded', () => {
   initLiveClock();
   initKioskLoop();
-  syncLocalDataToServer();
+  initNetworkDetector();
+  syncLocalDataToServer(false);
   fetchAdminData();
   setInterval(fetchAdminData, 4000);
 });
+
+// --- NETWORK STATUS DETECTOR ---
+function initNetworkDetector() {
+  updateNetworkStatus();
+  window.addEventListener('online', updateNetworkStatus);
+  window.addEventListener('offline', updateNetworkStatus);
+}
+
+function updateNetworkStatus() {
+  const badge = document.getElementById('network-badge');
+  const text = document.getElementById('network-status-text');
+  if (!badge || !text) return;
+
+  if (navigator.onLine) {
+    badge.className = "hidden sm:flex items-center space-x-1.5 px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full text-[11px] font-mono font-semibold";
+    text.textContent = "Disk & Cloud Synced";
+  } else {
+    badge.className = "hidden sm:flex items-center space-x-1.5 px-2.5 py-1 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-full text-[11px] font-mono font-semibold";
+    text.textContent = "Offline LAN (Saving to Disk)";
+  }
+}
 
 // --- TOAST NOTIFICATION ---
 function showToast(title, message, isError = false) {
@@ -62,11 +84,58 @@ function switchTab(tabName) {
   });
 }
 
-// --- SYNC LOCAL STORAGE TO SERVER ---
-async function syncLocalDataToServer() {
+// --- HARD DRIVE BACKUP & RESTORE ENGINE ---
+function backupDatabaseToJSON() {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const backupData = {
+    version: '1.0',
+    exportDate: new Date().toISOString(),
+    employees: localEmployees,
+    logs: localLogs
+  };
+
+  const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData, null, 2));
+  const downloadAnchor = document.createElement('a');
+  downloadAnchor.setAttribute("href", dataStr);
+  downloadAnchor.setAttribute("download", `SmartAttend_Backup_${timestamp}.json`);
+  document.body.appendChild(downloadAnchor);
+  downloadAnchor.click();
+  downloadAnchor.remove();
+
+  showToast('Backup Saved to Disk', 'Database JSON backup successfully saved to your hard drive.');
+}
+
+function restoreDatabaseFromJSON(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = async function(e) {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (Array.isArray(data.employees)) {
+        localEmployees = data.employees;
+        localStorage.setItem('smartattend_employees', JSON.stringify(localEmployees));
+      }
+      if (Array.isArray(data.logs)) {
+        localLogs = data.logs;
+        localStorage.setItem('smartattend_logs', JSON.stringify(localLogs));
+      }
+      await syncLocalDataToServer(false);
+      fetchAdminData();
+      showToast('Backup Restored', `Restored ${localEmployees.length} employees from local disk backup.`);
+    } catch (err) {
+      showToast('Restore Error', 'Invalid backup JSON file.', true);
+    }
+  };
+  reader.readAsText(file);
+}
+
+// --- SYNC LOCAL STORAGE TO CLOUD/SERVER ---
+async function syncLocalDataToServer(showFeedback = false) {
   if (localEmployees.length > 0 || localLogs.length > 0) {
     try {
-      await fetch('/api/admin/sync', {
+      const res = await fetch('/api/admin/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -74,7 +143,15 @@ async function syncLocalDataToServer() {
           initialLogs: localLogs
         })
       });
-    } catch (e) {}
+      const data = await res.json();
+      if (showFeedback && data.success) {
+        showToast('Cloud Synced', 'All local records successfully uploaded and synced to cloud.');
+      }
+    } catch (e) {
+      if (showFeedback) {
+        showToast('Offline Mode Active', 'Operating on local disk storage. Will sync when online.', false);
+      }
+    }
   }
 }
 
@@ -176,7 +253,23 @@ async function fetchAdminData() {
     renderKioskTicker(displayLogs);
     populateManualUserSelect(displayEmployees);
   } catch (e) {
-    console.error("Error fetching admin data", e);
+    // If offline, use local storage
+    const displayEmployees = localEmployees;
+    const displayLogs = localLogs;
+    const checkedInCount = displayEmployees.filter(e => e.status === 'IN').length;
+    const lateCount = displayEmployees.filter(e => e.isLateToday).length;
+    const otCount = displayEmployees.filter(e => e.hasOvertime).length;
+
+    document.getElementById('kpi-total-emp').textContent = displayEmployees.length;
+    document.getElementById('kpi-checked-in').textContent = checkedInCount;
+    document.getElementById('kpi-checked-out').textContent = displayEmployees.length - checkedInCount;
+    document.getElementById('kpi-late-count').textContent = lateCount;
+    document.getElementById('kpi-overtime-count').textContent = otCount;
+
+    applyFilters();
+    renderAdminLogs(displayLogs);
+    renderKioskTicker(displayLogs);
+    populateManualUserSelect(displayEmployees);
   }
 }
 
@@ -187,16 +280,13 @@ function applyFilters() {
   const statusFilter = document.getElementById('filter-status-select')?.value || 'ALL';
 
   let filtered = localEmployees.filter(e => {
-    // Search match
     const matchSearch = !searchQuery ||
       e.name.toLowerCase().includes(searchQuery) ||
       (e.phone && e.phone.includes(searchQuery)) ||
       (e.department && e.department.toLowerCase().includes(searchQuery));
 
-    // Department match
     const matchDept = deptFilter === 'ALL' || e.department === deptFilter;
 
-    // Status match
     let matchStatus = true;
     if (statusFilter === 'IN') matchStatus = e.status === 'IN';
     else if (statusFilter === 'OUT') matchStatus = e.status === 'OUT';
@@ -734,7 +824,7 @@ async function handleAddUserSubmit(e) {
   showToast('Employee Registered', `"${name}" added. Click "Bind Phone" to link their device.`);
 }
 
-// --- MANUAL PUNCH MODAL ---
+// --- MANUAL PUNCH MODAL WITH REASON / CATEGORY ---
 function openManualPunchModal() {
   populateManualUserSelect(localEmployees);
   document.getElementById('manual-punch-modal').classList.remove('hidden');
@@ -760,6 +850,7 @@ async function handleManualPunchSubmit(e) {
   e.preventDefault();
   const userId = document.getElementById('manual-user-select').value;
   const forcedType = document.querySelector('input[name="manual-type"]:checked').value;
+  const category = document.getElementById('manual-category-select').value;
 
   if (!userId) {
     showToast('Error', 'Please select an employee', true);
@@ -775,9 +866,10 @@ async function handleManualPunchSubmit(e) {
     userId,
     userName: emp ? emp.name : 'Employee',
     eventType: forcedType,
+    category,
     time: now.toISOString(),
     formattedTime: timeFormatted,
-    method: 'MANUAL_ADMIN'
+    method: `MANUAL (${category})`
   };
 
   localLogs.unshift(logEntry);
